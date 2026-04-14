@@ -1,0 +1,11 @@
+# Ignore Agent & Claude Markdown files
+*agent*.md
+*claude*.md
+AGENTS.md
+claude.md
+
+.env
+node_modules/
+dist/
+data/
+*.db
