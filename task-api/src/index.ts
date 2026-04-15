@@ -32,18 +32,20 @@ app.use((_req, res) => {
 // ─── Initialize DB & Start Server ────────────
 initializeDatabase()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`🚀 Task API running at http://localhost:${PORT}`);
-      console.log(`📋 Endpoints:`);
-      console.log(`   POST   /api/plans`);
-      console.log(`   GET    /api/plans/:id`);
-      console.log(`   DELETE /api/plans/:id`);
-      console.log(`   PATCH  /api/tasks/:id`);
-    });
+    console.log('Database initialized');
   })
   .catch((err) => {
     console.error('Failed to start server due to DB init error:', err);
     process.exit(1);
   });
+
+app.listen(PORT, () => {
+  console.log(`🚀 Task API running at http://localhost:${PORT}`);
+  console.log(`📋 Endpoints:`);
+  console.log(`   POST   /api/plans`);
+  console.log(`   GET    /api/plans/:id`);
+  console.log(`   DELETE /api/plans/:id`);
+  console.log(`   PATCH  /api/tasks/:id`);
+});
 
 export default app;
