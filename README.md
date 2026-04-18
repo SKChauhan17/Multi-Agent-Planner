@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-    A warm, editorial planning workspace that turns one goal into a realistic roadmap you can edit, re-review, and execute.
+    A warm, editorial planning system that turns one goal into a realistic roadmap you can edit, re-review, and execute.
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 
 ## Why This Feels Different
 
-Most planners stop at generation. This one stays useful after generation.
+Most planners stop at generation. Multi-Agent Planner stays useful during execution.
 
 | Stage | What You Get | Why It Matters |
 |---|---|---|
@@ -33,7 +33,7 @@ Most planners stop at generation. This one stays useful after generation.
 | Edit | Manual task refinement | Human control where it counts |
 | Operate | Standups, status flow, history | Day-to-day execution clarity |
 
-Documentation style follows the language and visual direction in `DESIGN.md`.
+This documentation suite follows the language and visual direction in `DESIGN.md`.
 
 ## Architecture
 

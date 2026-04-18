@@ -17,7 +17,7 @@
 
 ---
 
-Task API is the persistence backbone: it stores plans, enforces task update contracts, and serves plan/task state over REST.
+The Task API is the persistence backbone: it stores plans, enforces task update contracts, and serves plan/task state over REST.
 
 ## Service Snapshot
 

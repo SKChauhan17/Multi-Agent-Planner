@@ -1,25 +1,25 @@
 <p align="center">
-    <img src="../.github/assets/readme-frontend-hero.svg" alt="Frontend Hero" width="100%" />
+  <img src="../.github/assets/readme-frontend-hero.svg" alt="Frontend Hero" width="100%" />
 </p>
 
 <p align="center">
-    <img src="https://img.shields.io/badge/Next.js_16-Planning_UI-141413?style=for-the-badge" alt="Next.js" />
-    <img src="https://img.shields.io/badge/React_19-Interactive-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="React" />
-    <img src="https://img.shields.io/badge/Motion-Framer-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Framer Motion" />
+  <img src="https://img.shields.io/badge/Next.js_16-Planning_UI-141413?style=for-the-badge" alt="Next.js" />
+  <img src="https://img.shields.io/badge/React_19-Interactive-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="React" />
+  <img src="https://img.shields.io/badge/Motion-Framer-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Framer Motion" />
 </p>
 
 <p align="center">
-    <a href="#setup--run">Quick Start</a> ·
-    <a href="#ui-flow-clean-ascii">UI Flow</a> ·
-    <a href="#feature-highlights">Features</a> ·
-    <a href="#integration-endpoints">Endpoints</a>
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#ui-flow-clean-ascii">UI Flow</a> ·
+  <a href="#feature-highlights">Features</a> ·
+  <a href="#integration-endpoints">Endpoints</a>
 </p>
 
 ---
 
-This is the planning studio experience: a warm, editorial dashboard for generating plans, refining tasks, and tracking execution momentum.
+The Frontend is the planning studio experience: a warm, editorial dashboard for generating plans, refining tasks, and tracking execution momentum.
 
-## Experience Snapshot
+## Service Snapshot
 
 | Interaction | User Value |
 |---|---|
@@ -88,7 +88,7 @@ Copy-Item .env.example .env.local
 | `NEXT_PUBLIC_AI_SERVICE_URL` | Yes | Base URL for AI Service |
 | `NEXT_PUBLIC_TASK_API_URL` | Yes | Base URL for Task API including `/api` |
 
-## Setup & Run
+## Quick Start
 
 From repository root:
 

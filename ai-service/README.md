@@ -1,23 +1,23 @@
 <p align="center">
-        <img src="../.github/assets/readme-ai-hero.svg" alt="AI Service Hero" width="100%" />
+  <img src="../.github/assets/readme-ai-hero.svg" alt="AI Service Hero" width="100%" />
 </p>
 
 <p align="center">
-        <img src="https://img.shields.io/badge/FastAPI-Orchestration-141413?style=for-the-badge" alt="FastAPI" />
-        <img src="https://img.shields.io/badge/Planner+Reviewer-Enabled-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Planner Reviewer" />
-        <img src="https://img.shields.io/badge/Fallback-Groq+OpenRouter-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Fallback" />
+  <img src="https://img.shields.io/badge/FastAPI-Orchestration-141413?style=for-the-badge" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/Planner+Reviewer-Enabled-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Planner Reviewer" />
+  <img src="https://img.shields.io/badge/Fallback-Groq+OpenRouter-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Fallback" />
 </p>
 
 <p align="center">
-        <a href="#quick-start">Quick Start</a> ·
-        <a href="#processing-pipeline-clean-ascii">Pipeline</a> ·
-        <a href="#endpoints">Endpoints</a> ·
-        <a href="#output-contract">Output Contract</a>
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#processing-pipeline-clean-ascii">Pipeline</a> ·
+  <a href="#endpoints">Endpoints</a> ·
+  <a href="#output-contract">Output Contract</a>
 </p>
 
 ---
 
-The AI Service is the orchestration brain of the platform: it plans, critiques, normalizes, and forwards final plans for storage.
+The AI Service is the orchestration engine of the platform: it plans, critiques, normalizes, and forwards final plans for storage.
 
 ## Service Snapshot
 
