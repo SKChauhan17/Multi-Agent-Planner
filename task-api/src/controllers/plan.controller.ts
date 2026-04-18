@@ -8,7 +8,6 @@ import type {
   CreatePlanRequest,
   ApiSuccessResponse,
   ApiErrorResponse,
-  PlanWithTasks,
   TaskPriority,
   TaskStatus,
 } from '../types';
@@ -91,9 +90,19 @@ export async function handleCreatePlan(req: Request, res: Response): Promise<voi
       tasks: body.tasks,
     });
 
-    const response: ApiSuccessResponse<PlanWithTasks> = {
-      success: true,
-      data: result,
+    const parsedResult = {
+      ...result,
+      tasks: result.tasks.map((task) => ({
+        ...task,
+        dependencies: typeof task.dependencies === 'string' ? JSON.parse(task.dependencies) : task.dependencies,
+      })),
+    };
+
+    const response = {
+      success: true as const,
+      data: parsedResult,
+      plan_id: result.id,
+      message: 'Plan created successfully.',
     };
 
     res.status(201).json(response);
@@ -135,9 +144,15 @@ export async function handleGetPlan(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const response: ApiSuccessResponse<PlanWithTasks> = {
+    const response: ApiSuccessResponse<any> = {
       success: true,
-      data: plan,
+      data: {
+        ...plan,
+        tasks: plan.tasks.map((task) => ({
+          ...task,
+          dependencies: JSON.parse(task.dependencies || '[]'),
+        })),
+      },
     };
 
     res.status(200).json(response);

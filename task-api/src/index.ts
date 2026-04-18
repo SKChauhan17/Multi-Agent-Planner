@@ -46,6 +46,7 @@ app.listen(PORT, () => {
   console.log(`   GET    /api/plans/:id`);
   console.log(`   DELETE /api/plans/:id`);
   console.log(`   PATCH  /api/tasks/:id`);
+  setInterval(() => {}, 1000 * 60 * 60); // Keep alive
 });
 
 export default app;
