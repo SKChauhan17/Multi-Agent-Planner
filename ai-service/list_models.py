@@ -1,18 +1,13 @@
-from dotenv import load_dotenv
-from google import genai
+from agents.planner import FALLBACK_MODELS
 
-def main():
-    # Load the variables from the .env file
-    load_dotenv()
-    
-    # Now the client will automatically find GEMINI_API_KEY
-    client = genai.Client()
-    
-    print("Fetching available models...\n")
-    
-    # Loop through the available models and print their names
-    for model in client.models.list():
-        print(model.name)
+
+def main() -> None:
+    print("Configured model fallback chain:\n")
+    for index, config in enumerate(FALLBACK_MODELS, start=1):
+        provider = config.get("provider", "unknown")
+        model = config.get("model", "unknown")
+        print(f"{index}. {provider}: {model}")
+
 
 if __name__ == "__main__":
     main()
