@@ -312,7 +312,10 @@ export default function Page() {
   const [agentTrace, setAgentTrace] = useState<AgentTraceEntry[]>([]);
   const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
 
-  const aiServiceUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL ?? "http://localhost:8000";
+  const aiServiceUrl =
+    process.env.NEXT_PUBLIC_AI_SERVICE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_AI_API_URL?.trim() ||
+    (process.env.NODE_ENV === "development" ? "http://localhost:8000" : "");
 
   useEffect(() => {
     const dt = new Date();
@@ -374,6 +377,18 @@ export default function Page() {
     ]);
   };
 
+  const ensureAiServiceUrl = (): string | null => {
+    if (!aiServiceUrl) {
+      const message =
+        "AI service URL is not configured. Set NEXT_PUBLIC_AI_SERVICE_URL (or NEXT_PUBLIC_AI_API_URL) in your frontend deployment environment.";
+      setError(message);
+      appendTrace("Config", message, "error");
+      return null;
+    }
+
+    return aiServiceUrl.replace(/\/+$/, "");
+  };
+
   const syncEnvelopeStateFromGoal = (goalEnvelope: string) => {
     const parsed = parseGoalEnvelope(goalEnvelope);
     setGoal(parsed.goalText);
@@ -418,8 +433,13 @@ export default function Page() {
     }, 2200);
 
     try {
+      const baseUrl = ensureAiServiceUrl();
+      if (!baseUrl) {
+        return;
+      }
+
       const finalGoal = `Goal: ${goal} | Deadline: ${deadline || "None"} | Priority: ${userPriority}`;
-      const response = await axios.post<PlanResponse>(`${aiServiceUrl}/generate-plan`, {
+      const response = await axios.post<PlanResponse>(`${baseUrl}/generate-plan`, {
         goal: finalGoal,
       });
 
@@ -465,8 +485,13 @@ export default function Page() {
 
     if (taskId.startsWith("local-")) return;
 
+    const baseUrl = ensureAiServiceUrl();
+    if (!baseUrl) {
+      return;
+    }
+
     try {
-      const response = await axios.patch(`${aiServiceUrl}/update-task/${taskId}`, {
+      const response = await axios.patch(`${baseUrl}/update-task/${taskId}`, {
         status: newStatus,
       });
       const serverTask = normalizeTask(response.data?.data, 0);
@@ -564,7 +589,13 @@ export default function Page() {
 
     try {
       if (!editingTaskId.startsWith("local-")) {
-        await axios.patch(`${aiServiceUrl}/update-task/${editingTaskId}`, {
+        const baseUrl = ensureAiServiceUrl();
+        if (!baseUrl) {
+          appendTrace("Task Edit", `Task ${updatedTask.task_id} edit persisted locally only.`, "error");
+          return;
+        }
+
+        await axios.patch(`${baseUrl}/update-task/${editingTaskId}`, {
           task_id: updatedTask.task_id,
           title: updatedTask.title,
           description: updatedTask.description,
@@ -597,7 +628,12 @@ export default function Page() {
     appendTrace("Reviewer", "Manual edits submitted for reviewer rerun.", "working");
 
     try {
-      const response = await axios.post<PlanResponse>(`${aiServiceUrl}/re-review-plan`, {
+      const baseUrl = ensureAiServiceUrl();
+      if (!baseUrl) {
+        return;
+      }
+
+      const response = await axios.post<PlanResponse>(`${baseUrl}/re-review-plan`, {
         goal: result.final_plan.goal,
         tasks: result.final_plan.tasks,
       });
@@ -631,7 +667,12 @@ export default function Page() {
     appendTrace("Standup", "Generating daily standup summary for current task graph.", "working");
 
     try {
-      const response = await axios.post(`${aiServiceUrl}/daily-standup`, {
+      const baseUrl = ensureAiServiceUrl();
+      if (!baseUrl) {
+        return;
+      }
+
+      const response = await axios.post(`${baseUrl}/daily-standup`, {
         goal: result.final_plan.goal,
         tasks: result.final_plan.tasks,
       });

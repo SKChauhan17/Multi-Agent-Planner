@@ -85,7 +85,10 @@ Copy-Item .env.example .env.local
 
 | Variable | Required | Description |
 |---|---|---|
-| `NEXT_PUBLIC_AI_SERVICE_URL` | Yes | Base URL for AI Service |
+| `NEXT_PUBLIC_AI_SERVICE_URL` | Yes | Primary base URL for AI Service |
+| `NEXT_PUBLIC_AI_API_URL` | No | Backward-compatible alias if older deployments used this key |
+
+In production, the frontend requires one of these environment variables to be set. Localhost fallback is only used in development.
 
 ## Quick Start
 
