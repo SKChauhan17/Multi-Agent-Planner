@@ -4,6 +4,7 @@ import type {
   PlanRow,
   TaskRow,
   CreatePlanRequest,
+  UpdateTaskRequest,
   UpdateTaskStatusRequest,
   PlanWithTasks,
 } from '../types/index';
@@ -29,18 +30,21 @@ export async function createPlan(data: CreatePlanRequest): Promise<PlanWithTasks
 
     for (const task of data.tasks) {
       const taskId = generateId();
+      const safeTaskPublicId = task.task_id?.trim() || `T${taskRows.length + 1}`;
       await db.run(
-        `INSERT INTO tasks (id, plan_id, title, description, estimated_hours, priority, status, dependency_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks (id, plan_id, task_id, title, description, estimated_hours, priority, status, dependencies, recommended_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           taskId,
           planId,
+          safeTaskPublicId,
           task.title,
           task.description ?? '',
           task.estimated_hours ?? 0,
           task.priority ?? 'Medium',
           task.status ?? 'todo',
-          task.dependency_id ?? null,
+          JSON.stringify(task.dependencies) ?? '[]',
+          task.recommended_date ?? '',
         ]
       );
 
@@ -48,12 +52,14 @@ export async function createPlan(data: CreatePlanRequest): Promise<PlanWithTasks
       taskRows.push({
         id: taskId,
         plan_id: planId,
+        task_id: safeTaskPublicId,
         title: task.title,
         description: task.description ?? '',
         estimated_hours: task.estimated_hours ?? 0,
         priority: task.priority ?? 'Medium',
         status: task.status ?? 'todo',
-        dependency_id: task.dependency_id ?? null,
+        dependencies: JSON.stringify(task.dependencies) ?? '[]',
+        recommended_date: task.recommended_date ?? '',
         created_at: new Date().toISOString(),
       });
     }
@@ -81,7 +87,7 @@ export async function getPlanById(planId: string): Promise<PlanWithTasks | null>
   if (!plan) return null;
 
   const tasks = await db.all<TaskRow[]>(
-    `SELECT id, plan_id, title, description, estimated_hours, priority, status, dependency_id, created_at
+    `SELECT id, plan_id, task_id, title, description, estimated_hours, priority, status, dependencies, recommended_date, created_at
      FROM tasks WHERE plan_id = ? ORDER BY created_at ASC`,
     [planId]
   );
@@ -96,7 +102,7 @@ export async function getPlanById(planId: string): Promise<PlanWithTasks | null>
 export async function getTaskById(taskId: string): Promise<TaskRow | null> {
   const db = await getConnection();
   const task = await db.get<TaskRow>(
-    `SELECT id, plan_id, title, description, estimated_hours, priority, status, dependency_id, created_at
+    `SELECT id, plan_id, task_id, title, description, estimated_hours, priority, status, dependencies, recommended_date, created_at
      FROM tasks WHERE id = ?`,
     [taskId]
   );
@@ -107,14 +113,62 @@ export async function getTaskById(taskId: string): Promise<TaskRow | null> {
  * Updates the status of a task. Returns the updated task or null if not found.
  */
 export async function updateTaskStatus(taskId: string, data: UpdateTaskStatusRequest): Promise<TaskRow | null> {
+  return updateTask(taskId, { status: data.status });
+}
+
+/**
+ * Updates mutable task fields and returns the updated row.
+ */
+export async function updateTask(taskId: string, data: UpdateTaskRequest): Promise<TaskRow | null> {
   const db = await getConnection();
 
   const existing = await getTaskById(taskId);
   if (!existing) return null;
 
-  await db.run(`UPDATE tasks SET status = ? WHERE id = ?`, [data.status, taskId]);
+  const nextTaskId = data.task_id?.trim() || existing.task_id;
+  const nextTitle = data.title?.trim() || existing.title;
+  const nextDescription = data.description ?? existing.description;
+  const nextEstimatedHours = data.estimated_hours ?? existing.estimated_hours;
+  const nextPriority = data.priority ?? existing.priority;
+  const nextStatus = data.status ?? existing.status;
+  const nextDependencies = data.dependencies ? JSON.stringify(data.dependencies) : existing.dependencies;
+  const nextRecommendedDate = data.recommended_date ?? existing.recommended_date;
 
-  return { ...existing, status: data.status };
+  await db.run(
+    `UPDATE tasks
+     SET task_id = ?,
+         title = ?,
+         description = ?,
+         estimated_hours = ?,
+         priority = ?,
+         status = ?,
+         dependencies = ?,
+         recommended_date = ?
+     WHERE id = ?`,
+    [
+      nextTaskId,
+      nextTitle,
+      nextDescription,
+      nextEstimatedHours,
+      nextPriority,
+      nextStatus,
+      nextDependencies,
+      nextRecommendedDate,
+      taskId,
+    ]
+  );
+
+  return {
+    ...existing,
+    task_id: nextTaskId,
+    title: nextTitle,
+    description: nextDescription,
+    estimated_hours: nextEstimatedHours,
+    priority: nextPriority,
+    status: nextStatus,
+    dependencies: nextDependencies,
+    recommended_date: nextRecommendedDate,
+  };
 }
 
 /**

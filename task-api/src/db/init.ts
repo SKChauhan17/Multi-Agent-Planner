@@ -16,6 +16,23 @@ export async function initializeDatabase(): Promise<void> {
   
   const db = await getConnection();
   await db.exec(schemaSql);
+
+  // Backward-compatible migration path for existing databases.
+  const columns = await db.all<{ name: string }[]>(`PRAGMA table_info(tasks)`);
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('task_id')) {
+    await db.exec(`ALTER TABLE tasks ADD COLUMN task_id TEXT NOT NULL DEFAULT ''`);
+  }
+
+  if (!columnNames.has('dependencies')) {
+    await db.exec(`ALTER TABLE tasks ADD COLUMN dependencies TEXT NOT NULL DEFAULT '[]'`);
+  }
+
+  if (!columnNames.has('recommended_date')) {
+    await db.exec(`ALTER TABLE tasks ADD COLUMN recommended_date TEXT NOT NULL DEFAULT ''`);
+  }
+
   console.log('✅ Database initialized successfully');
 }
 

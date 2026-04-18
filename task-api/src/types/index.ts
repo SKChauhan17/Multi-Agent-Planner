@@ -19,24 +19,28 @@ export interface PlanRow {
 export interface TaskRow {
   id: string;
   plan_id: string;
+  task_id: string;
   title: string;
   description: string;
   estimated_hours: number;
   priority: TaskPriority;
   status: TaskStatus;
-  dependency_id: string | null;
+  dependencies: string; // JSON string from SQLite
+  recommended_date: string;
   created_at: string;
 }
 
 // ─── Request Body Types ──────────────────────
 
 export interface CreateTaskInput {
+  task_id: string;
   title: string;
   description?: string;
   estimated_hours?: number;
   priority?: TaskPriority;
   status?: TaskStatus;
-  dependency_id?: string | null;
+  dependencies?: string[];
+  recommended_date?: string;
 }
 
 export interface CreatePlanRequest {
@@ -46,6 +50,17 @@ export interface CreatePlanRequest {
 
 export interface UpdateTaskStatusRequest {
   status: TaskStatus;
+}
+
+export interface UpdateTaskRequest {
+  task_id?: string;
+  title?: string;
+  description?: string;
+  estimated_hours?: number;
+  priority?: TaskPriority;
+  status?: TaskStatus;
+  dependencies?: string[];
+  recommended_date?: string;
 }
 
 // ─── Response Types ──────────────────────────
