@@ -1,35 +1,43 @@
 # Frontend - Multi-Agent Planner
 
-This app is the user-facing planning studio built with Next.js 16 and React 19.
-It handles goal input, plan generation, manual task editing, reviewer reruns, daily standup summaries, and in-session plan history.
+This is the planning studio experience: a warm, editorial dashboard for generating plans, refining tasks, and tracking execution momentum.
 
-## Architecture
+## UI Flow (Clean ASCII)
 
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                        Next.js App (localhost:3000)                 │
-│                                                                      │
-│  Goal + Constraints UI  ──┐                                          │
-│  Task Cards + Editors     ├──► Axios Client ──► AI Service (8000)   │
-│  Reviewer/Standup Panels  ┘                └──► Task API (4000/api) │
-│                                                                      │
-│  Local State Slices:                                                 │
-│  - plan result                                                       │
-│  - agent step trace                                                  │
-│  - standup snapshot                                                  │
-│  - plan history (session)                                            │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Frontend (http://localhost:3000)                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────┐      POST /generate-plan      ┌──────────────────────────────┐
+│ Goal + Constraints Form      │ ─────────────────────────────> │ AI Service (:8000)           │
+│ deadline + priority controls │      POST /re-review-plan     │ planner/reviewer endpoints    │
+└───────────────┬──────────────┘ ─────────────────────────────> └──────────────────────────────┘
+                │
+                │ PATCH /api/tasks/:id
+                ▼
+┌──────────────────────────────┐
+│ Editable Task Cards          │
+│ status, fields, dependencies │
+└───────────────┬──────────────┘
+                │
+                │ local UI slices
+                ▼
+┌──────────────────────────────┐
+│ history, standup, trace      │
+│ print/export-safe rendering  │
+└──────────────────────────────┘
 ```
 
-## Key Features
+## Feature Highlights
 
-- Goal brief with optional deadline and priority inputs.
-- Live generation phases: planning, reviewing, finalizing.
-- Editable task cards with persistence for saved tasks.
-- Re-run reviewer agent on manually edited plans.
-- Daily standup mode (done / in-progress / blocked).
-- Session plan history snapshots with one-click restore.
-- PDF export via print-friendly layout.
+- Goal brief with optional deadline and priority controls.
+- Progressive generation phases: planning, reviewing, finalizing.
+- Inline task editing with Task API persistence.
+- Reviewer rerun for edited task graphs.
+- Daily standup summary for done, active, and blocked items.
+- In-session plan history snapshots.
+- PDF export via print-safe layout.
 
 ## Tech Stack
 
@@ -37,13 +45,13 @@ It handles goal input, plan generation, manual task editing, reviewer reruns, da
 - React 19
 - TypeScript
 - Framer Motion
-- Lucide Icons
+- Lucide
 - Tailwind CSS
 - Axios
 
 ## Environment Variables
 
-Copy and configure:
+Create local env file:
 
 ```powershell
 Copy-Item .env.example .env.local
@@ -51,7 +59,7 @@ Copy-Item .env.example .env.local
 
 | Variable | Required | Description |
 |---|---|---|
-| `NEXT_PUBLIC_AI_SERVICE_URL` | Yes | Base URL for FastAPI service |
+| `NEXT_PUBLIC_AI_SERVICE_URL` | Yes | Base URL for AI Service |
 | `NEXT_PUBLIC_TASK_API_URL` | Yes | Base URL for Task API including `/api` |
 
 ## Setup & Run
@@ -74,15 +82,14 @@ npm run start --prefix frontend
 
 ## Important Files
 
-- `src/app/page.tsx`: main planner workflow and UI state orchestration.
-- `src/app/globals.css`: design tokens, selectors, print safety.
-- `.env.example`: client runtime endpoint config.
+- `src/app/page.tsx`: planner workflow, edit state, and integration calls.
+- `src/app/globals.css`: design tokens and print-safe selectors.
+- `src/app/layout.tsx`: font and metadata wiring.
+- `.env.example`: runtime endpoint template.
 
-## Integration Notes
+## Integration Endpoints
 
-- AI endpoints consumed:
-	- `POST /generate-plan`
-	- `POST /re-review-plan`
-	- `POST /daily-standup`
-- Task API endpoint consumed:
-	- `PATCH /api/tasks/:id`
+- `POST /generate-plan`
+- `POST /re-review-plan`
+- `POST /daily-standup`
+- `PATCH /api/tasks/:id`
