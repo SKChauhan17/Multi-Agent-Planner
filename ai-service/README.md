@@ -28,6 +28,26 @@ The AI Service is the orchestration engine of the platform: it plans, critiques,
 | Normalize | Apply guardrails and schema safety | stable payload |
 | Persist | Send final plan to Task API | durable plan record |
 
+## Active Model Chain (Quality + Low Latency)
+
+Planner and reviewer agent calls use the same fallback chain, in this exact order:
+
+1. `groq` -> `llama-3.3-70b-versatile`
+2. `groq` -> `openai/gpt-oss-120b`
+3. `groq` -> `qwen/qwen3-32b`
+4. `groq` -> `llama-3.1-8b-instant`
+5. `openrouter` -> `openai/gpt-oss-120b:free`
+6. `openrouter` -> `meta-llama/llama-3.3-70b-instruct:free`
+7. `openrouter` -> `qwen/qwen3-next-80b-a3b-instruct:free`
+8. `openrouter` -> `google/gemma-4-31b-it:free`
+9. `openrouter` -> `openai/gpt-oss-20b:free`
+
+Why this chain is practical:
+
+- Groq-first routing keeps first-attempt latency low.
+- Cross-provider fallback improves reliability under model/provider outages.
+- Responses are forced into strict JSON and validated before they enter the task pipeline.
+
 ## Processing Pipeline (Clean ASCII)
 
 ```text

@@ -20,6 +20,10 @@
     <a href="#service-guides">Service Guides</a>
 </p>
 
+<p align="center">
+    Live App: <a href="https://multi-agent-planner-liard.vercel.app">https://multi-agent-planner-liard.vercel.app</a>
+</p>
+
 ---
 
 ## Why This Feels Different
@@ -47,7 +51,6 @@ This documentation suite follows the language and visual direction in `DESIGN.md
 │ Next.js 16 + React 19        │      POST /re-review-plan      │ FastAPI                      │
 │ http://localhost:3000        │ ──────────────────────────────> │ http://localhost:8000        │
 │                              │      POST /daily-standup       │                              │
-│                              │      PATCH /update-task/:id    │                              │
 └───────────────┬──────────────┘ ──────────────────────────────> └──────────────┬──────────────┘
                                 │                     reviewed plan + standup                   │
                                 │ <───────────────────────────────────────────────────────────── │
@@ -68,6 +71,28 @@ This documentation suite follows the language and visual direction in `DESIGN.md
 | Frontend | Next.js 16 + React 19 | Goal capture, task editing, standup and history UI |
 | AI Service | FastAPI + provider fallback chain | Planner/reviewer orchestration and normalization |
 | Task API | Express + TypeScript + SQLite | Durable storage and task lifecycle updates |
+
+## AI Model Strategy (Quality + Low Latency)
+
+Both planner and reviewer calls use the same ordered fallback chain. The runtime starts on Groq first for strong latency, then fails over to OpenRouter models for resilience.
+
+| Order | Provider | Model |
+|---|---|---|
+| 1 | Groq | llama-3.3-70b-versatile |
+| 2 | Groq | openai/gpt-oss-120b |
+| 3 | Groq | qwen/qwen3-32b |
+| 4 | Groq | llama-3.1-8b-instant |
+| 5 | OpenRouter | openai/gpt-oss-120b:free |
+| 6 | OpenRouter | meta-llama/llama-3.3-70b-instruct:free |
+| 7 | OpenRouter | qwen/qwen3-next-80b-a3b-instruct:free |
+| 8 | OpenRouter | google/gemma-4-31b-it:free |
+| 9 | OpenRouter | openai/gpt-oss-20b:free |
+
+Why this works well:
+
+- Lower median response times by prioritizing Groq models first.
+- Better uptime via provider-level fallback across Groq and OpenRouter.
+- Stable structured outputs because planner/reviewer responses are schema-validated before use.
 
 ## Repository Map
 
