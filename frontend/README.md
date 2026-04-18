@@ -1,6 +1,32 @@
-# Frontend - Multi-Agent Planner
+<p align="center">
+    <img src="../.github/assets/readme-frontend-hero.svg" alt="Frontend Hero" width="100%" />
+</p>
+
+<p align="center">
+    <img src="https://img.shields.io/badge/Next.js_16-Planning_UI-141413?style=for-the-badge" alt="Next.js" />
+    <img src="https://img.shields.io/badge/React_19-Interactive-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="React" />
+    <img src="https://img.shields.io/badge/Motion-Framer-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Framer Motion" />
+</p>
+
+<p align="center">
+    <a href="#setup--run">Quick Start</a> ·
+    <a href="#ui-flow-clean-ascii">UI Flow</a> ·
+    <a href="#feature-highlights">Features</a> ·
+    <a href="#integration-endpoints">Endpoints</a>
+</p>
+
+---
 
 This is the planning studio experience: a warm, editorial dashboard for generating plans, refining tasks, and tracking execution momentum.
+
+## Experience Snapshot
+
+| Interaction | User Value |
+|---|---|
+| Goal + constraints input | Better planning context from day one |
+| Editable task cards | Human control over generated output |
+| Reviewer rerun | Fast quality pass on manual edits |
+| Standup + history panels | Better daily execution visibility |
 
 ## UI Flow (Clean ASCII)
 
@@ -13,16 +39,16 @@ This is the planning studio experience: a warm, editorial dashboard for generati
 │ Goal + Constraints Form      │ ─────────────────────────────> │ AI Service (:8000)           │
 │ deadline + priority controls │      POST /re-review-plan     │ planner/reviewer endpoints    │
 └───────────────┬──────────────┘ ─────────────────────────────> └──────────────────────────────┘
-                │
-                │ PATCH /api/tasks/:id
-                ▼
+                                │
+                                │ PATCH /api/tasks/:id
+                                ▼
 ┌──────────────────────────────┐
 │ Editable Task Cards          │
 │ status, fields, dependencies │
 └───────────────┬──────────────┘
-                │
-                │ local UI slices
-                ▼
+                                │
+                                │ local UI slices
+                                ▼
 ┌──────────────────────────────┐
 │ history, standup, trace      │
 │ print/export-safe rendering  │

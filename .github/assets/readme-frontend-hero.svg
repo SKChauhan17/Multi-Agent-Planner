@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="360" viewBox="0 0 1600 360" role="img" aria-labelledby="title desc">
+  <title id="title">Frontend</title>
+  <desc id="desc">Editorial banner for the Frontend README.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f5f4ed"/>
+      <stop offset="100%" stop-color="#ece8dc"/>
+    </linearGradient>
+    <linearGradient id="chip" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#141413"/>
+      <stop offset="100%" stop-color="#30302e"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="360" fill="url(#bg)"/>
+  <rect x="52" y="44" width="1496" height="272" rx="24" fill="#faf9f5" stroke="#e8e6dc" stroke-width="2"/>
+
+  <rect x="98" y="88" width="166" height="36" rx="18" fill="#c96442"/>
+  <text x="181" y="112" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#faf9f5" letter-spacing="1">PLANNING STUDIO</text>
+
+  <text x="98" y="178" font-family="Georgia, serif" font-size="56" fill="#141413">Frontend</text>
+  <text x="98" y="218" font-family="Segoe UI, Arial, sans-serif" font-size="24" fill="#5e5d59">Readable UX for generation, edits, reruns, standups, and history</text>
+
+  <rect x="98" y="248" width="302" height="40" rx="10" fill="url(#chip)"/>
+  <text x="249" y="273" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="600" fill="#faf9f5">Next.js 16 + React 19 Experience</text>
+</svg>

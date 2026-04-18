@@ -1,6 +1,31 @@
-# Task API - Multi-Agent Planner
+<p align="center">
+  <img src="../.github/assets/readme-taskapi-hero.svg" alt="Task API Hero" width="100%" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Express-API_Core-141413?style=for-the-badge" alt="Express" />
+  <img src="https://img.shields.io/badge/Storage-SQLite-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="SQLite" />
+  <img src="https://img.shields.io/badge/Contracts-Strict-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Contracts" />
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#request-flow-clean-ascii">Flow</a> ·
+  <a href="#endpoints">Endpoints</a> ·
+  <a href="#example-requests">Examples</a>
+</p>
+
+---
 
 Task API is the persistence backbone: it stores plans, enforces task update contracts, and serves plan/task state over REST.
+
+## Service Snapshot
+
+| Focus | Outcome |
+|---|---|
+| Durable writes | Plans and tasks survive across sessions |
+| Safe updates | Mutable field validation on task edits |
+| Predictable reads | Stable plan/task response contracts |
 
 ## Request Flow (Clean ASCII)
 
@@ -50,7 +75,7 @@ Copy-Item .env.example .env
 | `PORT` | No | API port, default `4000` |
 | `DB_PATH` | No | SQLite file path, default `./data/planner.db` |
 
-## Setup & Run
+## Quick Start
 
 From repository root:
 
