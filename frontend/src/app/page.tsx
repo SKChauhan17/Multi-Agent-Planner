@@ -1,25 +1,43 @@
 "use client";
 
-import { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
-import { motion, AnimatePresence, Variants } from 'framer-motion';
-import { Loader2, Sparkles, AlertCircle, CheckCircle2, Clock, Hourglass, Target, ChevronDown, Rocket, Sun, Moon, RotateCcw, Download } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import { AnimatePresence, motion, Variants } from "framer-motion";
+import {
+  AlertCircle,
+  CalendarClock,
+  ChevronDown,
+  Clock3,
+  Download,
+  History,
+  Hourglass,
+  Loader2,
+  Pencil,
+  RefreshCcw,
+  Save,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 
-/** Utilities for Class Merging */
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** TypeScript Types */
+type TaskPriority = "High" | "Medium" | "Low";
+type TaskStatus = "todo" | "in-progress" | "done";
+
 interface TaskRow {
   id: string;
+  task_id: string;
   title: string;
   description: string;
   estimated_hours: number;
-  priority: 'High' | 'Medium' | 'Low';
-  status: 'todo' | 'in-progress' | 'done';
+  priority: TaskPriority;
+  status: TaskStatus;
+  dependencies: string[];
+  recommended_date: string;
 }
 
 interface PlanResponse {
@@ -31,462 +49,1301 @@ interface PlanResponse {
   };
 }
 
-type LoadingPhase = 'none' | 'planning' | 'reviewing' | 'finalizing';
-type ThemeMode = 'light' | 'dark';
+interface DailyStandupResponse {
+  standup_summary: string;
+  done: string[];
+  in_progress: string[];
+  blocked: string[];
+}
 
-// Framer motion variants for stagger
+interface PlanHistoryItem {
+  id: string;
+  label: string;
+  created_at: string;
+  goal_preview: string;
+  result: PlanResponse;
+}
+
+interface TaskDraft {
+  task_id: string;
+  title: string;
+  description: string;
+  estimated_hours: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  dependencies: string;
+  recommended_date: string;
+}
+
+interface AgentTraceEntry {
+  id: string;
+  step: string;
+  detail: string;
+  state: "working" | "done" | "error";
+  at: string;
+}
+
+type LoadingPhase = "none" | "planning" | "reviewing" | "finalizing";
+
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.1,
+      staggerChildren: 0.08,
     },
   },
 };
 
 const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 30, scale: 0.95 },
-  show: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 100 } },
+  hidden: { opacity: 0, y: 18 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.28, ease: "easeOut" } },
 };
 
-export default function Page() {
-  const [mounted, setMounted] = useState(false);
-  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
+const statusLabelMap: Record<TaskStatus, string> = {
+  todo: "To Do",
+  "in-progress": "In Progress",
+  done: "Done",
+};
 
-  const [goal, setGoal] = useState('');
-  const [loadingPhase, setLoadingPhase] = useState<LoadingPhase>('none');
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PlanResponse | null>(null);
+function createClientId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
-  const dashRef = useRef<HTMLDivElement>(null);
+function formatDateLabel(value: string): string {
+  if (!value) return "Not set";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 
-  useEffect(() => {
-    const storedTheme = window.localStorage.getItem('multi-agent-theme');
+function formatDateTimeLabel(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-    if (storedTheme === 'dark' || storedTheme === 'light') {
-      setThemeMode(storedTheme);
+function normalizeDependencies(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
+      }
+    } catch {
+      // fallback to comma-separated parsing
     }
 
-    setMounted(true);
-  }, []);
+    return trimmed
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+
+  return [];
+}
+
+function normalizeTask(task: unknown, index: number): TaskRow {
+  const source = typeof task === "object" && task !== null ? (task as Record<string, unknown>) : {};
+
+  const taskId = typeof source.task_id === "string" && source.task_id.trim().length > 0
+    ? source.task_id.trim()
+    : `T${index + 1}`;
+
+  const id = typeof source.id === "string" && source.id.trim().length > 0
+    ? source.id.trim()
+    : createClientId("local");
+
+  const title = typeof source.title === "string" && source.title.trim().length > 0
+    ? source.title.trim()
+    : `Task ${index + 1}`;
+
+  const description = typeof source.description === "string" && source.description.trim().length > 0
+    ? source.description.trim()
+    : `Complete ${title.toLowerCase()}.`;
+
+  const estimatedRaw = Number(source.estimated_hours);
+  const estimatedHours = Number.isFinite(estimatedRaw) ? Math.max(0, Math.round(estimatedRaw)) : 1;
+
+  const priorityCandidate = String(source.priority ?? "Medium").trim() as TaskPriority;
+  const priority: TaskPriority = ["High", "Medium", "Low"].includes(priorityCandidate)
+    ? priorityCandidate
+    : "Medium";
+
+  const statusCandidate = String(source.status ?? "todo").trim() as TaskStatus;
+  const status: TaskStatus = ["todo", "in-progress", "done"].includes(statusCandidate)
+    ? statusCandidate
+    : "todo";
+
+  const recommendedDate = typeof source.recommended_date === "string" ? source.recommended_date.trim() : "";
+
+  return {
+    id,
+    task_id: taskId,
+    title,
+    description,
+    estimated_hours: estimatedHours,
+    priority,
+    status,
+    dependencies: normalizeDependencies(source.dependencies),
+    recommended_date: recommendedDate,
+  };
+}
+
+function normalizePlanResponse(payload: unknown): PlanResponse {
+  const source = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+  const finalPlanRaw =
+    typeof source.final_plan === "object" && source.final_plan !== null
+      ? (source.final_plan as Record<string, unknown>)
+      : {};
+
+  const rawTasks = Array.isArray(finalPlanRaw.tasks) ? finalPlanRaw.tasks : [];
+  const normalizedTasks = rawTasks.map((task, index) => normalizeTask(task, index));
+
+  const reviewSummary = typeof source.review_summary === "string" && source.review_summary.trim().length > 0
+    ? source.review_summary.trim()
+    : "No review summary available.";
+
+  const planId = typeof finalPlanRaw.id === "string" && finalPlanRaw.id.trim().length > 0
+    ? finalPlanRaw.id.trim()
+    : createClientId("plan");
+
+  const goal = typeof finalPlanRaw.goal === "string" ? finalPlanRaw.goal : "";
+
+  return {
+    review_summary: reviewSummary,
+    final_plan: {
+      id: planId,
+      goal,
+      tasks: normalizedTasks,
+    },
+  };
+}
+
+function clonePlanResponse(plan: PlanResponse): PlanResponse {
+  return normalizePlanResponse(JSON.parse(JSON.stringify(plan)) as unknown);
+}
+
+function normalizeStandupResponse(payload: unknown): DailyStandupResponse {
+  const source = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+  const toStringArray = (value: unknown): string[] =>
+    Array.isArray(value) ? value.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0) : [];
+
+  return {
+    standup_summary:
+      typeof source.standup_summary === "string" && source.standup_summary.trim().length > 0
+        ? source.standup_summary.trim()
+        : "No standup summary available.",
+    done: toStringArray(source.done),
+    in_progress: toStringArray(source.in_progress),
+    blocked: toStringArray(source.blocked),
+  };
+}
+
+function parseGoalEnvelope(goalEnvelope: string): {
+  goalText: string;
+  deadline: string;
+  priority: TaskPriority;
+} {
+  const sections = goalEnvelope.split("|").map((part) => part.trim());
+  let goalText = goalEnvelope.trim();
+  let deadline = "";
+  let priority: TaskPriority = "Medium";
+
+  for (const section of sections) {
+    if (section.startsWith("Goal:")) {
+      goalText = section.replace("Goal:", "").trim() || goalText;
+    }
+    if (section.startsWith("Deadline:")) {
+      const raw = section.replace("Deadline:", "").trim();
+      deadline = raw.toLowerCase() === "none" ? "" : raw;
+    }
+    if (section.startsWith("Priority:")) {
+      const rawPriority = section.replace("Priority:", "").trim() as TaskPriority;
+      if (["High", "Medium", "Low"].includes(rawPriority)) {
+        priority = rawPriority;
+      }
+    }
+  }
+
+  return {
+    goalText,
+    deadline,
+    priority,
+  };
+}
+
+export default function Page() {
+  const [goal, setGoal] = useState("");
+  const [deadline, setDeadline] = useState("");
+  const [userPriority, setUserPriority] = useState<TaskPriority>("Medium");
+  const [loadingPhase, setLoadingPhase] = useState<LoadingPhase>("none");
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<PlanResponse | null>(null);
+  const [today, setToday] = useState("");
+
+  const [isRerunningReview, setIsRerunningReview] = useState(false);
+  const [isGeneratingStandup, setIsGeneratingStandup] = useState(false);
+  const [dailyStandup, setDailyStandup] = useState<DailyStandupResponse | null>(null);
+
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
+
+  const [agentTrace, setAgentTrace] = useState<AgentTraceEntry[]>([]);
+  const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
+
+  const aiServiceUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL ?? "http://localhost:8000";
+  const taskApiUrl = process.env.NEXT_PUBLIC_TASK_API_URL ?? "http://localhost:4000/api";
 
   useEffect(() => {
-    if (!mounted) return;
+    const dt = new Date();
+    const localDate = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
+      .toISOString()
+      .split("T")[0];
+    setToday(localDate);
+  }, []);
 
-    const root = document.documentElement;
-    root.classList.toggle('dark', themeMode === 'dark');
-    root.style.colorScheme = themeMode;
-    window.localStorage.setItem('multi-agent-theme', themeMode);
-  }, [mounted, themeMode]);
+  const tasks = useMemo(() => result?.final_plan?.tasks ?? [], [result]);
+  const hasResult = Boolean(result);
+  const isBusy = loadingPhase !== "none" || isRerunningReview || isGeneratingStandup;
 
-  const toggleTheme = () => {
-    setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
+  const visibleTasks = useMemo(
+    () =>
+      [...tasks].sort((a, b) => {
+        const aDone = a.status === "done" ? 1 : 0;
+        const bDone = b.status === "done" ? 1 : 0;
+        return aDone - bDone;
+      }),
+    [tasks],
+  );
+
+  const inProgressCount = tasks.filter((task) => task.status === "in-progress").length;
+  const completedCount = tasks.filter((task) => task.status === "done").length;
+  const criticalRemainingCount = tasks.filter(
+    (task) => task.priority === "High" && task.status !== "done",
+  ).length;
+  const totalHours = tasks
+    .filter((task) => task.status !== "done")
+    .reduce((sum, task) => sum + task.estimated_hours, 0);
+  const completionRate = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0;
+  const inProgressRate = tasks.length ? Math.round((inProgressCount / tasks.length) * 100) : 0;
+
+  const daysLeft = deadline
+    ? Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+
+  const appendTrace = (
+    step: string,
+    detail: string,
+    state: AgentTraceEntry["state"] = "working",
+  ) => {
+    const timestamp = new Date().toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    setAgentTrace((previous) => [
+      ...previous,
+      {
+        id: createClientId("trace"),
+        step,
+        detail,
+        state,
+        at: timestamp,
+      },
+    ]);
+  };
+
+  const syncEnvelopeStateFromGoal = (goalEnvelope: string) => {
+    const parsed = parseGoalEnvelope(goalEnvelope);
+    setGoal(parsed.goalText);
+    setDeadline(parsed.deadline);
+    setUserPriority(parsed.priority);
+  };
+
+  const recordHistorySnapshot = (snapshot: PlanResponse, label: string) => {
+    const normalized = clonePlanResponse(snapshot);
+    const parsedGoal = parseGoalEnvelope(normalized.final_plan.goal);
+    const historyItem: PlanHistoryItem = {
+      id: createClientId("history"),
+      label,
+      created_at: new Date().toISOString(),
+      goal_preview: parsedGoal.goalText,
+      result: normalized,
+    };
+
+    setPlanHistory((previous) => [historyItem, ...previous].slice(0, 12));
   };
 
   const handleGenerate = async () => {
     if (!goal.trim()) return;
-    
+
     setError(null);
+    setDailyStandup(null);
     setResult(null);
-    setLoadingPhase('planning');
+    setEditingTaskId(null);
+    setTaskDraft(null);
+    setLoadingPhase("planning");
+    setAgentTrace([]);
+    appendTrace("Pipeline", "Planner agent started from your latest project brief.", "working");
+
+    const timerOne = window.setTimeout(() => {
+      setLoadingPhase("reviewing");
+      appendTrace("Planner", "Task draft completed; reviewer critique has started.", "working");
+    }, 1100);
+
+    const timerTwo = window.setTimeout(() => {
+      setLoadingPhase("finalizing");
+      appendTrace("Reviewer", "Reviewer revisions accepted; normalizing and syncing tasks.", "working");
+    }, 2200);
 
     try {
-      setTimeout(() => setLoadingPhase('reviewing'), 1500);
-      setTimeout(() => setLoadingPhase('finalizing'), 3000);
+      const finalGoal = `Goal: ${goal} | Deadline: ${deadline || "None"} | Priority: ${userPriority}`;
+      const response = await axios.post<PlanResponse>(`${aiServiceUrl}/generate-plan`, {
+        goal: finalGoal,
+      });
 
-      const response = await axios.post<PlanResponse>('http://localhost:8000/generate-plan', { goal });
-      setResult(response.data);
-    } catch (err: unknown) {
-      console.error(err);
-      if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail || 'An unexpected error occurred while contacting AI services.');
+      const normalized = normalizePlanResponse(response.data);
+      setResult(normalized);
+      recordHistorySnapshot(normalized, "Generated plan");
+      appendTrace("Finalize", "Plan is ready with persistence + reviewer summary.", "done");
+    } catch (requestError: unknown) {
+      if (axios.isAxiosError(requestError)) {
+        setError(
+          requestError.response?.data?.detail ||
+            "An unexpected error occurred while contacting the planning services.",
+        );
       } else {
-        setError((err as Error).message || 'An unexpected error occurred while contacting AI services.');
+        setError(
+          (requestError as Error).message ||
+            "An unexpected error occurred while contacting the planning services.",
+        );
       }
+      appendTrace("Error", "Generation failed before a complete plan was returned.", "error");
     } finally {
-      setLoadingPhase('none');
+      window.clearTimeout(timerOne);
+      window.clearTimeout(timerTwo);
+      setLoadingPhase("none");
     }
   };
 
-  const handleReset = () => {
-    window.location.reload();
-  };
-
-  const handleExportPDF = () => {
-    window.print();
-  };
-
-  const handleStatusChange = async (taskId: string, newStatus: TaskRow['status']) => {
+  const handleStatusChange = async (taskId: string, newStatus: TaskStatus) => {
     if (!result) return;
 
-    setResult((prev) => {
-      if (!prev) return prev;
+    setResult((previous) => {
+      if (!previous) return previous;
       return {
-        ...prev,
+        ...previous,
         final_plan: {
-          ...prev.final_plan,
-          tasks: prev.final_plan.tasks.map((t) =>
-            t.id === taskId ? { ...t, status: newStatus } : t
+          ...previous.final_plan,
+          tasks: previous.final_plan.tasks.map((task) =>
+            task.id === taskId ? { ...task, status: newStatus } : task,
+          ),
+        },
+      };
+    });
+
+    if (taskId.startsWith("local-")) return;
+
+    try {
+      const response = await axios.patch(`${taskApiUrl}/tasks/${taskId}`, { status: newStatus });
+      const serverTask = normalizeTask(response.data?.data, 0);
+
+      setResult((previous) => {
+        if (!previous) return previous;
+        return {
+          ...previous,
+          final_plan: {
+            ...previous.final_plan,
+            tasks: previous.final_plan.tasks.map((task) =>
+              task.id === taskId ? { ...task, ...serverTask, id: task.id } : task,
+            ),
+          },
+        };
+      });
+    } catch (statusError) {
+      console.error("Failed to persist task status", statusError);
+      appendTrace("Persistence", `Failed to persist status for task ${taskId}.`, "error");
+    }
+  };
+
+  const startTaskEdit = (task: TaskRow) => {
+    setEditingTaskId(task.id);
+    setTaskDraft({
+      task_id: task.task_id,
+      title: task.title,
+      description: task.description,
+      estimated_hours: String(task.estimated_hours),
+      priority: task.priority,
+      status: task.status,
+      dependencies: task.dependencies.join(", "),
+      recommended_date: task.recommended_date,
+    });
+  };
+
+  const cancelTaskEdit = () => {
+    setEditingTaskId(null);
+    setTaskDraft(null);
+  };
+
+  const handleTaskDraftChange = <K extends keyof TaskDraft>(field: K, value: TaskDraft[K]) => {
+    setTaskDraft((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        [field]: value,
+      };
+    });
+  };
+
+  const saveTaskEdit = async () => {
+    if (!result || !taskDraft || !editingTaskId) return;
+
+    if (!taskDraft.title.trim()) {
+      setError("Task title cannot be empty.");
+      return;
+    }
+
+    const hours = Number(taskDraft.estimated_hours);
+    if (!Number.isFinite(hours) || hours < 0) {
+      setError("Estimated hours must be a non-negative number.");
+      return;
+    }
+
+    const dependencies = taskDraft.dependencies
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+
+    const updatedTask: TaskRow = {
+      id: editingTaskId,
+      task_id: taskDraft.task_id.trim() || "T1",
+      title: taskDraft.title.trim(),
+      description: taskDraft.description.trim(),
+      estimated_hours: Math.round(hours),
+      priority: taskDraft.priority,
+      status: taskDraft.status,
+      dependencies,
+      recommended_date: taskDraft.recommended_date.trim(),
+    };
+
+    setResult((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        final_plan: {
+          ...previous.final_plan,
+          tasks: previous.final_plan.tasks.map((task) =>
+            task.id === editingTaskId ? updatedTask : task,
           ),
         },
       };
     });
 
     try {
-      await axios.patch(`http://localhost:4000/api/tasks/${taskId}`, { status: newStatus });
-    } catch (err) {
-      console.error("Failed to update status", err);
+      if (!editingTaskId.startsWith("local-")) {
+        await axios.patch(`${taskApiUrl}/tasks/${editingTaskId}`, {
+          task_id: updatedTask.task_id,
+          title: updatedTask.title,
+          description: updatedTask.description,
+          estimated_hours: updatedTask.estimated_hours,
+          priority: updatedTask.priority,
+          status: updatedTask.status,
+          dependencies: updatedTask.dependencies,
+          recommended_date: updatedTask.recommended_date,
+        });
+      }
+
+      appendTrace("Task Edit", `Saved manual edits for ${updatedTask.task_id}.`, "done");
+      setEditingTaskId(null);
+      setTaskDraft(null);
+      setError(null);
+    } catch (saveError) {
+      console.error("Failed to persist edited task", saveError);
+      setError("Task edits were applied locally, but persistence to the Task API failed.");
+      appendTrace("Task Edit", `Task ${updatedTask.task_id} edit persisted locally only.`, "error");
     }
   };
 
-  const tasks = result?.final_plan?.tasks || [];
-  const visibleTasks = [...tasks].sort((left, right) => {
-    const leftCompleted = left.status === 'done' ? 1 : 0;
-    const rightCompleted = right.status === 'done' ? 1 : 0;
-    return leftCompleted - rightCompleted;
-  });
-  const criticalRemainingCount = tasks.filter((task) => task.priority === 'High' && task.status !== 'done').length;
-  // Make the total load update as tasks are done
-  const totalHours = tasks.filter(t => t.status !== 'done').reduce((sum, t) => sum + t.estimated_hours, 0);
-  const highPriorityCount = tasks.filter((t) => t.priority === 'High').length;
-  const inProgressCount = tasks.filter((t) => t.status === 'in-progress').length;
-  const completedCount = tasks.filter((t) => t.status === 'done').length;
-  const completionRate = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
-  const progressTone =
-    completionRate < 20 ? 'text-rose-500 dark:text-rose-400' :
-    completionRate < 40 ? 'text-orange-500 dark:text-orange-400' :
-    completionRate < 60 ? 'text-amber-500 dark:text-amber-400' :
-    completionRate < 80 ? 'text-cyan-500 dark:text-cyan-400' :
-    'text-emerald-500 dark:text-emerald-400';
+  const handleRerunReviewer = async () => {
+    if (!result) return;
 
-  const hasResult = result && loadingPhase === 'none';
+    setError(null);
+    setDailyStandup(null);
+    setIsRerunningReview(true);
+    setLoadingPhase("reviewing");
+    appendTrace("Reviewer", "Manual edits submitted for reviewer rerun.", "working");
 
-  const formatSynopsis = (text: string) => {
-    return text.split(/(\*\*.*?\*\*)/g).map((part, i) => 
-      part.startsWith('**') && part.endsWith('**') 
-        ? <strong key={i} className="font-semibold text-indigo-600 dark:text-cyan-400">{part.slice(2, -2)}</strong> 
-        : part
-    );
+    try {
+      const response = await axios.post<PlanResponse>(`${aiServiceUrl}/re-review-plan`, {
+        goal: result.final_plan.goal,
+        tasks: result.final_plan.tasks,
+      });
+
+      const normalized = normalizePlanResponse(response.data);
+      setResult(normalized);
+      recordHistorySnapshot(normalized, "Reviewer rerun");
+      syncEnvelopeStateFromGoal(normalized.final_plan.goal);
+      appendTrace("Reviewer", "Revised plan received from reviewer rerun.", "done");
+    } catch (requestError: unknown) {
+      if (axios.isAxiosError(requestError)) {
+        setError(
+          requestError.response?.data?.detail ||
+            "Reviewer rerun failed while contacting the AI service.",
+        );
+      } else {
+        setError((requestError as Error).message || "Reviewer rerun failed.");
+      }
+      appendTrace("Reviewer", "Reviewer rerun failed.", "error");
+    } finally {
+      setLoadingPhase("none");
+      setIsRerunningReview(false);
+    }
+  };
+
+  const handleGenerateStandup = async () => {
+    if (!result) return;
+
+    setError(null);
+    setIsGeneratingStandup(true);
+    appendTrace("Standup", "Generating daily standup summary for current task graph.", "working");
+
+    try {
+      const response = await axios.post(`${aiServiceUrl}/daily-standup`, {
+        goal: result.final_plan.goal,
+        tasks: result.final_plan.tasks,
+      });
+
+      const normalized = normalizeStandupResponse(response.data);
+      setDailyStandup(normalized);
+      appendTrace("Standup", "Standup summary is ready.", "done");
+    } catch (requestError: unknown) {
+      if (axios.isAxiosError(requestError)) {
+        setError(
+          requestError.response?.data?.detail ||
+            "Daily standup generation failed while contacting the AI service.",
+        );
+      } else {
+        setError((requestError as Error).message || "Daily standup generation failed.");
+      }
+      appendTrace("Standup", "Standup generation failed.", "error");
+    } finally {
+      setIsGeneratingStandup(false);
+    }
+  };
+
+  const handleLoadHistorySnapshot = (item: PlanHistoryItem) => {
+    const snapshot = clonePlanResponse(item.result);
+    setResult(snapshot);
+    syncEnvelopeStateFromGoal(snapshot.final_plan.goal);
+    setDailyStandup(null);
+    setError(null);
+    setEditingTaskId(null);
+    setTaskDraft(null);
+    appendTrace("History", `Loaded snapshot from ${formatDateTimeLabel(item.created_at)}.`, "done");
+  };
+
+  const handleReset = () => {
+    setGoal("");
+    setDeadline("");
+    setUserPriority("Medium");
+    setError(null);
+    setResult(null);
+    setLoadingPhase("none");
+    setDailyStandup(null);
+    setEditingTaskId(null);
+    setTaskDraft(null);
+    appendTrace("Reset", "Cleared active plan from workspace view.", "done");
+  };
+
+  const handleExportPDF = () => {
+    window.print();
+  };
+
+  const traceStatusClass = (state: AgentTraceEntry["state"]): string => {
+    if (state === "done") return "bg-[#4f8a5b]";
+    if (state === "error") return "bg-[#b53333]";
+    return "bg-[#d97757]";
   };
 
   return (
-    <motion.div layout className={cn(
-      "min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-500/30 dark:selection:bg-cyan-500/30 w-full relative overflow-clip",
-      "flex flex-col lg:flex-row items-start relative print:bg-white print:!text-slate-900",
-      !hasResult && "p-4 justify-center items-center"
-    )}>
-      <style>{`
-        @media print {
-          @page { margin: 1in; } /* Restores standard paper margins for all pages */
-          body {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-        }
-      `}</style>
-
-      {/* Light Mode Blobs */}
-      <div className="fixed inset-0 pointer-events-none z-0 dark:opacity-0 transition-opacity duration-300 overflow-hidden">
-        <div className="absolute top-[-10%] right-[-5%] w-[50vw] h-[50vw] bg-indigo-500/5 blur-[120px] rounded-full transform-gpu" />
-        <div className="absolute bottom-[-10%] left-[-5%] w-[40vw] h-[40vw] bg-purple-500/5 blur-[100px] rounded-full transform-gpu" />
-      </div>
-
-      {/* Midnight Aurora Background (Dark Mode Only) */}
-      <div className="fixed inset-0 pointer-events-none z-0 hidden dark:block opacity-0 dark:opacity-100 transition-opacity duration-300">
-        <div className="absolute top-[-20%] left-[-10%] w-[70vw] h-[70vw] bg-cyan-900/20 blur-[150px] rounded-full mix-blend-screen transform-gpu" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[60vw] h-[60vw] bg-blue-900/20 blur-[140px] rounded-full mix-blend-screen transform-gpu" />
-      </div>
-
-      {/* ── Absolute Theme Toggle ── */}
-      <div className="absolute top-6 right-6 z-50 print:hidden">
-        {mounted && (
-          <button
-            onClick={toggleTheme}
-            className="relative flex items-center justify-center w-12 h-12 rounded-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-lg dark:shadow-[0_0_20px_rgba(255,255,255,0.05)] hover:bg-slate-100 dark:hover:bg-white/10 transition-all text-slate-600 dark:text-slate-300 backdrop-blur-md"
-            aria-label="Toggle theme"
-          >
-            <Sun className={cn("h-5 w-5 absolute transition-all duration-500", themeMode === 'dark' ? "rotate-90 scale-0 opacity-0" : "rotate-0 scale-100 opacity-100")} />
-            <Moon className={cn("h-5 w-5 absolute transition-all duration-500", themeMode === 'light' ? "-rotate-90 scale-0 opacity-0" : "rotate-0 scale-100 opacity-100")} />
-          </button>
-        )}
-      </div>
-
-      {/* ── LEFT COLUMN (Sticky/Fixed OR Centered) ──────────────────────── */}
-      <motion.aside 
-        layout
-        transition={{ type: "spring", bounce: 0, duration: 0.7 }}
-        className={cn(
-          "relative z-10 flex flex-col print:hidden",
-          hasResult 
-            ? "w-full lg:w-[450px] xl:w-[500px] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-white/10 lg:h-screen lg:sticky lg:top-0 overflow-y-auto p-6 lg:p-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)] bg-white dark:bg-slate-950/50 dark:backdrop-blur-3xl shrink-0" 
-            : "w-full max-w-2xl bg-transparent border-none m-auto"
-        )}
-      >
-        <motion.div layout className={cn("w-full flex flex-col", !hasResult && "items-center justify-center text-center")}>
-          <motion.div layout className={cn("flex flex-col", hasResult ? "mb-10 items-start" : "mb-8 items-center text-center")}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-gradient-to-br dark:from-cyan-500/20 dark:to-blue-500/20 border border-indigo-100 dark:border-cyan-500/30 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(99,102,241,0.2)] dark:shadow-[0_0_20px_rgba(34,211,238,0.15)]">
-                <Sparkles className="w-5 h-5 text-indigo-600 dark:text-cyan-400" />
-              </div>
-              <h1 className="font-extrabold tracking-tight text-xl text-slate-800 dark:text-white">
-                Multi-Agent <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-cyan-400 dark:to-blue-400 font-bold">Task Architect</span>
-              </h1>
-            </div>
-
-            {/* Action Bar (Only shows when results are present) */}
-            <AnimatePresence>
-              {hasResult && (
-                <motion.div 
-                  initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                  animate={{ opacity: 1, height: 'auto', marginTop: 24 }}
-                  className="flex items-center gap-3 w-full"
-                >
-                  <button 
-                    onClick={handleReset}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 transition-all shadow-sm"
-                  >
-                    <RotateCcw className="w-4 h-4" /> Start Over
-                  </button>
-                  <button 
-                    onClick={handleExportPDF}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-indigo-50 dark:bg-cyan-500/10 text-indigo-600 dark:text-cyan-400 hover:bg-indigo-100 dark:hover:bg-cyan-500/20 border border-indigo-200 dark:border-cyan-500/20 transition-all shadow-sm"
-                  >
-                    <Download className="w-4 h-4" /> Export PDF
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-
-          <motion.div layout className={cn("space-y-4 w-full", !hasResult && "flex flex-col items-center")}>
-            <motion.div layout className={cn(!hasResult && "text-center max-w-xl mx-auto")}>
-              <h2 className={cn("font-extrabold tracking-tight text-slate-900 dark:text-white mb-2", hasResult ? "text-3xl" : "text-4xl md:text-5xl leading-tight")}>
-                Define <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-cyan-400 dark:to-blue-400">Target</span>
-              </h2>
-              <p className={cn("text-slate-500 dark:text-slate-400 leading-relaxed", hasResult ? "text-sm mb-4" : "text-base mt-2")}>
-                Command our Generative Agents to construct a deeply optimized execution roadmap.
-              </p>
-            </motion.div>
-
-            <motion.div layout className={cn("relative group w-full", !hasResult && "max-w-xl mt-6")}>
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-cyan-500 dark:to-blue-500 rounded-2xl blur opacity-20 dark:opacity-30 group-hover:opacity-40 transition duration-1000" />
-              <div className="relative flex flex-col bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl dark:backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 rounded-2xl overflow-hidden shadow-xl shadow-slate-200/50 dark:shadow-[0_0_40px_rgba(0,0,0,0.3)] transition-all group-focus-within:shadow-indigo-500/10 dark:group-focus-within:shadow-cyan-500/10">
-                <textarea
-                  value={goal}
-                  onChange={(e) => setGoal(e.target.value)}
-                  placeholder="Design a scalable social networking architecture..."
-                  className="w-full bg-transparent resize-none outline-none p-5 text-base placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-0 text-slate-800 dark:text-white"
-                  disabled={loadingPhase !== 'none'}
-                  rows={hasResult ? 4 : 3}
-                />
-                <div className="bg-slate-50/80 dark:bg-slate-900/90 backdrop-blur-md p-4 border-t border-slate-100/80 dark:border-white/5 transition-colors">
-                  <button
-                    onClick={handleGenerate}
-                    disabled={!goal.trim() || loadingPhase !== 'none'}
-                    className="w-full relative overflow-hidden group/btn flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-cyan-600 dark:to-blue-600 hover:from-indigo-700 hover:to-violet-700 dark:hover:from-cyan-500 dark:hover:to-blue-500 disabled:opacity-50 disabled:pointer-events-none text-white px-6 py-3.5 rounded-xl font-bold tracking-wide transition-all shadow-[0_4px_14px_rgba(79,70,229,0.3)] hover:shadow-[0_6px_20px_rgba(79,70,229,0.4)] dark:shadow-[0_4px_14px_rgba(6,182,212,0.3)] dark:hover:shadow-[0_6px_20px_rgba(6,182,212,0.4)]"
-                  >
-                    {!hasResult && loadingPhase === 'none' && <Sparkles className="w-5 h-5 dark:text-cyan-200" />}
-                    {loadingPhase !== 'none' ? 'Synthesizing...' : 'Generate Architecture'}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-
-            {error && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={cn("bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-xl p-4 flex gap-3 text-sm text-red-800 dark:text-red-200 w-full text-left", !hasResult && "max-w-xl")}>
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <p>{error}</p>
-              </motion.div>
+    <div className="min-h-screen bg-[#f5f4ed] text-[#141413]">
+      <header className="sticky top-0 z-20 border-b border-[#e8e6dc] bg-[#f5f4ed]/95 backdrop-blur-sm print:hidden">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+          <div>
+            <p className="label-caps text-[#87867f]">Multi-Agent Planner</p>
+            <h1 className="editorial-title text-2xl leading-tight text-[#141413]">Planning Studio</h1>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {hasResult && (
+              <button
+                onClick={handleReset}
+                className="inline-flex items-center gap-2 rounded-xl border border-[#e8e6dc] bg-[#e8e6dc] px-4 py-2 text-sm font-semibold text-[#4d4c48] transition hover:bg-[#dfddd1] warm-ring"
+              >
+                <RefreshCcw className="h-4 w-4" />
+                Reset
+              </button>
             )}
 
-            <AnimatePresence>
-              {loadingPhase !== 'none' && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className={cn("w-full overflow-hidden flex justify-center mt-2", !hasResult && "max-w-xl")}
-                >
-                  <div className="bg-indigo-50 dark:bg-cyan-500/10 dark:backdrop-blur-xl border border-indigo-100 dark:border-cyan-500/20 rounded-xl p-4 flex items-center gap-4 text-indigo-700 dark:text-cyan-400 text-left w-full shadow-sm">
-                    <Loader2 className="w-5 h-5 animate-spin shrink-0 text-indigo-600 dark:text-cyan-400" />
-                    <span className="text-base font-semibold animate-pulse tracking-wide">
-                      {loadingPhase === 'planning' && 'Planner formulating nodes...'}
-                      {loadingPhase === 'reviewing' && 'Reviewer critiquing edges...'}
-                      {loadingPhase === 'finalizing' && 'Synchronizing graph mutations...'}
-                    </span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-              {hasResult && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="mt-8 relative w-full text-left bg-amber-50 dark:bg-slate-900 border border-amber-200/60 dark:border-slate-800 rounded-2xl p-6 shadow-xl shadow-amber-100/50 dark:shadow-none overflow-hidden"
-                >
-                  <div className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-amber-400 to-amber-500 dark:to-amber-600 rounded-l-2xl z-10" />
-                  <div className="flex items-center gap-2 mb-4 relative z-10">
-                    <Sparkles className="w-5 h-5 text-amber-500 dark:text-amber-400" />
-                    <h3 className="text-xs font-bold text-amber-600 dark:text-amber-400 tracking-widest uppercase">Generative Synopsis</h3>
-                  </div>
-                  <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed relative z-10 font-medium whitespace-pre-wrap">
-                    {formatSynopsis(result.review_summary)}
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        </motion.div>
-      </motion.aside>
-
-      {/* ── RIGHT COLUMN (Scrollable Tasks) ─────────────────────── */}
-      <AnimatePresence>
-        {hasResult && (
-          <motion.main 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ type: "spring", stiffness: 60, damping: 15, delay: 0.1 }}
-            className="flex-1 min-w-0 p-6 lg:p-12 overflow-y-auto relative z-10 w-full"
-          >
-            <div className="space-y-10 max-w-6xl mx-auto dark:bg-transparent w-full" ref={dashRef}>
-              
-              {/* Dynamic Metrics */}
-              <div className="hidden print:block print:mb-8 print:pb-4 print:border-b print:border-slate-300">
-                <h2 className="text-2xl font-bold print:text-slate-900 mb-2">Project Objective</h2>
-                <p className="text-lg print:text-slate-700">{goal}</p>
-              </div>
-
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="grid grid-cols-2 gap-4"
+            {hasResult && (
+              <button
+                onClick={handleRerunReviewer}
+                disabled={isBusy}
+                className="inline-flex items-center gap-2 rounded-xl border border-[#e8e6dc] bg-[#faf9f5] px-4 py-2 text-sm font-semibold text-[#4d4c48] transition hover:bg-[#f2f0e8] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 rounded-[2rem] p-6 flex flex-col gap-2 transition-all hover:bg-white dark:hover:bg-slate-900/100 hover:shadow-2xl hover:shadow-blue-500/15 dark:hover:shadow-blue-900/30 hover:-translate-y-1 hover:border-blue-200 dark:hover:border-blue-800/50 shadow-lg shadow-slate-200/20 dark:shadow-none print:shadow-none print:bg-slate-900 print:border-slate-900 group">
-                  <span className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2 print:text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors"><Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 print:text-slate-400 transition-transform group-hover:rotate-12" /> Total Load</span>
-                  <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight print:!text-white">{totalHours} <span className="text-sm text-slate-400 dark:text-slate-500 font-semibold align-middle print:!text-slate-400">HRS</span></span>
-                </div>
-                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 rounded-[2rem] p-6 flex flex-col gap-2 transition-all hover:bg-white dark:hover:bg-slate-900/100 hover:shadow-2xl hover:shadow-purple-500/15 dark:hover:shadow-purple-900/30 hover:-translate-y-1 hover:border-purple-200 dark:hover:border-purple-800/50 shadow-lg shadow-slate-200/20 dark:shadow-none print:shadow-none print:bg-slate-900 print:border-slate-900 group">
-                  <span className="text-purple-600 dark:text-purple-500/80 text-xs font-bold uppercase tracking-wider flex items-center gap-2 print:text-purple-400 group-hover:text-purple-700 dark:group-hover:text-purple-400 transition-colors"><Rocket className="w-3.5 h-3.5 transition-transform group-hover:-translate-y-1 group-hover:translate-x-1" /> In Progress</span>
-                  <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight print:!text-white">{inProgressCount} <span className="text-sm text-slate-400 dark:text-slate-500 font-semibold align-middle print:!text-slate-400">ACTIVE</span></span>
-                </div>
-                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 rounded-[2rem] p-6 flex flex-col gap-2 transition-all hover:bg-white dark:hover:bg-slate-900/100 hover:shadow-2xl hover:shadow-rose-500/15 dark:hover:shadow-rose-900/30 hover:-translate-y-1 hover:border-rose-200 dark:hover:border-rose-800/50 shadow-lg shadow-slate-200/20 dark:shadow-none print:shadow-none print:bg-slate-900 print:border-slate-900 group">
-                  <span className="text-rose-600 dark:text-rose-500/80 text-xs font-bold uppercase tracking-wider flex items-center gap-2 print:text-rose-400 group-hover:text-rose-700 dark:group-hover:text-rose-400 transition-colors"><AlertCircle className="w-3.5 h-3.5 transition-transform group-hover:scale-110" /> Critical Remaining</span>
-                  <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight print:!text-white">{criticalRemainingCount} <span className="text-sm text-slate-400 dark:text-slate-500 font-semibold align-middle print:!text-slate-400">OPEN</span></span>
-                </div>
-                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 rounded-[2rem] p-6 flex flex-col justify-center transition-all hover:bg-white dark:hover:bg-slate-900/100 hover:shadow-2xl hover:shadow-cyan-500/15 dark:hover:shadow-cyan-900/30 hover:-translate-y-1 hover:border-cyan-200 dark:hover:border-cyan-800/50 shadow-lg shadow-slate-200/20 dark:shadow-none print:shadow-none print:bg-slate-900 print:border-slate-900 group">
-                  <span className="text-indigo-600 dark:text-cyan-400/80 text-xs font-bold uppercase tracking-wider flex items-center gap-2 print:text-cyan-400 mb-2 group-hover:text-indigo-700 dark:group-hover:text-cyan-300 transition-colors"><Target className="w-3.5 h-3.5 transition-transform group-hover:scale-110" /> Progress</span>
-                  <span className={cn("text-3xl font-bold tracking-tight print:!text-white", progressTone)}>{completionRate}%</span>
-                  <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-full mt-3 overflow-hidden print:hidden">
-                    <motion.div 
-                      className={cn("h-full rounded-full transition-all duration-1000", progressTone.includes('emerald') ? 'bg-emerald-500' : progressTone.includes('cyan') ? 'bg-cyan-500' : progressTone.includes('amber') ? 'bg-amber-500' : progressTone.includes('orange') ? 'bg-orange-500' : 'bg-rose-500')} 
-                      initial={{ width: 0 }} 
-                      animate={{ width: `${completionRate}%` }} 
+                {isRerunningReview ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
+                )}
+                Re-run Reviewer
+              </button>
+            )}
+
+            {hasResult && (
+              <button
+                onClick={handleGenerateStandup}
+                disabled={isBusy}
+                className="inline-flex items-center gap-2 rounded-xl border border-[#e8e6dc] bg-[#faf9f5] px-4 py-2 text-sm font-semibold text-[#4d4c48] transition hover:bg-[#f2f0e8] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isGeneratingStandup ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Clock3 className="h-4 w-4" />
+                )}
+                Daily Standup
+              </button>
+            )}
+
+            {hasResult && (
+              <button
+                onClick={handleExportPDF}
+                className="inline-flex items-center gap-2 rounded-xl border border-[#c96442] bg-[#c96442] px-4 py-2 text-sm font-semibold text-[#faf9f5] transition hover:bg-[#b65b3c]"
+              >
+                <Download className="h-4 w-4" />
+                Export PDF
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+        <section className="print-safe-grid grid gap-6 print:block print:space-y-4 lg:grid-cols-[1.25fr_0.75fr]">
+          <motion.article
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="surface-card print-safe-motion rounded-[2rem] border border-[#f0eee6] bg-[#faf9f5] p-6 whisper-shadow print-card sm:p-8"
+          >
+            <div className="mb-6">
+              <p className="label-caps text-[#87867f]">Project Brief</p>
+              <h2 className="editorial-title mt-2 text-4xl leading-[1.1] text-[#141413] sm:text-5xl">
+                Architect the roadmap.
+              </h2>
+              <p className="mt-3 max-w-2xl text-[17px] text-[#5e5d59]">
+                Describe the mission and tune planning constraints. Planner and reviewer agents will produce a sequenced plan, then you can manually edit tasks, rerun review, and generate daily standups.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <label className="block">
+                <span className="label-caps text-[#5e5d59]">Goal</span>
+                <textarea
+                  value={goal}
+                  onChange={(event) => setGoal(event.target.value)}
+                  rows={4}
+                  disabled={isBusy}
+                  placeholder="Launch a productized personal finance dashboard for students by August with onboarding, budget tracking, and analytics."
+                  className="mt-2 w-full resize-none rounded-2xl border border-[#e8e6dc] bg-[#f5f4ed] px-4 py-3 text-[16px] text-[#141413] placeholder:text-[#87867f] shadow-[0_0_0_1px_#d1cfc5] outline-none transition focus:border-[#3898ec] focus:ring-2 focus:ring-[#3898ec]/30"
+                />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="label-caps text-[#5e5d59]">Priority</span>
+                  <div className="relative mt-2">
+                    <select
+                      value={userPriority}
+                      onChange={(event) => setUserPriority(event.target.value as TaskPriority)}
+                      disabled={isBusy}
+                      className="planner-select"
+                    >
+                      <option value="High">High Priority</option>
+                      <option value="Medium">Medium Priority</option>
+                      <option value="Low">Low Priority</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#87867f]" />
+                  </div>
+                </label>
+
+                <label className="block">
+                  <span className="label-caps text-[#5e5d59]">Deadline</span>
+                  <div className="mt-2">
+                    <input
+                      type="date"
+                      value={deadline}
+                      min={today}
+                      onChange={(event) => setDeadline(event.target.value)}
+                      disabled={isBusy}
+                      className="planner-select planner-date-input"
                     />
                   </div>
-                </div>
-              </motion.div>
+                </label>
+              </div>
 
-              {/* Tasks Grid */}
+              <div className="flex flex-wrap gap-3 pt-1">
+                <button
+                  onClick={handleGenerate}
+                  disabled={!goal.trim() || isBusy}
+                  className="inline-flex items-center gap-2 rounded-xl border border-[#c96442] bg-[#c96442] px-5 py-2.5 text-sm font-semibold text-[#faf9f5] transition hover:bg-[#b65b3c] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loadingPhase === "none" ? (
+                    <Sparkles className="h-4 w-4" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {loadingPhase === "none" ? "Generate Plan" : "Synthesizing"}
+                </button>
+              </div>
+            </div>
+
+            <AnimatePresence>
+              {loadingPhase !== "none" && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-5 overflow-hidden rounded-xl border border-[#e8e6dc] bg-[#f5f4ed] px-4 py-3 text-sm font-semibold text-[#5e5d59]"
+                >
+                  {loadingPhase === "planning" && "Planner agent is structuring milestones..."}
+                  {loadingPhase === "reviewing" && "Reviewer agent is stress-testing sequencing..."}
+                  {loadingPhase === "finalizing" && "Final plan is being normalized for delivery..."}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {error && (
+              <div className="mt-5 rounded-xl border border-[#f0d6d1] bg-[#fff3f1] px-4 py-3 text-sm text-[#b53333]">
+                <p className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{error}</span>
+                </p>
+              </div>
+            )}
+          </motion.article>
+
+          <motion.article
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="surface-card print-safe-motion rounded-[2rem] border border-[#30302e] bg-[#141413] p-6 text-[#faf9f5] whisper-shadow print-card sm:p-8"
+          >
+            <p className="label-caps text-[#b0aea5]">Planning Snapshot</p>
+            <h3 className="editorial-title mt-2 text-3xl leading-[1.2]">Execution context</h3>
+
+            <div className="mt-5 space-y-3 text-sm">
+              <div className="rounded-xl border border-[#30302e] bg-[#1c1c1a] px-4 py-3">
+                <p className="label-caps text-[#b0aea5]">Priority</p>
+                <p className="mt-1 text-base font-semibold text-[#faf9f5]">{userPriority}</p>
+              </div>
+              <div className="rounded-xl border border-[#30302e] bg-[#1c1c1a] px-4 py-3">
+                <p className="label-caps text-[#b0aea5]">Deadline</p>
+                <p className="mt-1 text-base font-semibold text-[#faf9f5]">
+                  {deadline ? formatDateLabel(deadline) : "No fixed deadline"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-[#30302e] bg-[#1c1c1a] px-4 py-4">
+              <p className="label-caps text-[#b0aea5]">Reviewer Summary</p>
+              <p className="mt-2 text-[15px] leading-7 text-[#e8e6dc]">
+                {hasResult
+                  ? result?.review_summary
+                  : "Once generated, this panel shows the reviewer agent critique and the refined execution narrative in concise form."}
+              </p>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-[#30302e] bg-[#1c1c1a] px-4 py-4">
+              <p className="label-caps text-[#b0aea5]">Agent Step Trace</p>
+              {agentTrace.length === 0 ? (
+                <p className="mt-2 text-sm text-[#b0aea5]">
+                  Step-by-step agent activity appears here during generation, reruns, edits, and standup mode.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {agentTrace.slice(-8).map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-start gap-3 rounded-lg border border-[#30302e] bg-[#141413] px-3 py-2"
+                    >
+                      <span className={cn("mt-1.5 h-2 w-2 rounded-full", traceStatusClass(entry.state))} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-[#e8e6dc]">
+                          {entry.step}
+                        </p>
+                        <p className="text-sm text-[#b0aea5]">{entry.detail}</p>
+                      </div>
+                      <span className="text-[11px] text-[#87867f]">{entry.at}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.article>
+        </section>
+
+        <section className="hidden border-b border-[#e8e6dc] pb-4 print:block">
+          <h2 className="editorial-title text-2xl">Project Parameters</h2>
+          <p className="mt-2 text-[16px] text-[#4d4c48]">Goal: {goal || "Not set"}</p>
+          <p className="text-[16px] text-[#4d4c48]">Priority: {userPriority}</p>
+          <p className="text-[16px] text-[#4d4c48]">
+            Deadline: {deadline ? formatDateLabel(deadline) : "No fixed deadline"}
+          </p>
+        </section>
+
+        <AnimatePresence>
+          {hasResult && (
+            <motion.section
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              className="space-y-8"
+            >
+              <div className="print-safe-grid grid grid-cols-1 gap-4 print:block print:space-y-3 md:grid-cols-2">
+                <article className="surface-card rounded-2xl border border-[#f0eee6] bg-[#faf9f5] p-5 warm-ring print-card">
+                  <p className="label-caps text-[#87867f]">Total Load</p>
+                  <p className="mt-1 text-3xl font-semibold text-[#141413]">{totalHours}h</p>
+                </article>
+
+                <article className="surface-card rounded-2xl border border-[#f0eee6] bg-[#faf9f5] p-5 warm-ring print-card">
+                  <p className="label-caps text-[#87867f]">In Progress</p>
+                  <p className="mt-1 text-3xl font-semibold text-[#141413]">{inProgressCount}</p>
+                </article>
+
+                <article className="surface-card rounded-2xl border border-[#f0eee6] bg-[#faf9f5] p-5 warm-ring print-card">
+                  <p className="label-caps text-[#87867f]">Time Left</p>
+                  <p className="mt-1 text-3xl font-semibold text-[#141413]">
+                    {daysLeft === null ? "Flexible" : `${daysLeft} days`}
+                  </p>
+                </article>
+
+                <article className="surface-card rounded-2xl border border-[#f0eee6] bg-[#faf9f5] p-5 warm-ring print-card">
+                  <p className="label-caps text-[#87867f]">Critical Remaining</p>
+                  <p className="mt-1 text-3xl font-semibold text-[#141413]">{criticalRemainingCount}</p>
+                </article>
+
+                <article className="surface-card rounded-2xl border border-[#f0eee6] bg-[#faf9f5] p-5 warm-ring print-card md:col-span-2">
+                  <p className="label-caps text-[#87867f]">Progress</p>
+                  <div className="mt-2 flex items-end justify-between">
+                    <p className="text-3xl font-semibold text-[#141413]">{completionRate}%</p>
+                    <p className="text-sm font-semibold text-[#5e5d59]">
+                      In Progress {inProgressRate}% • Done {completionRate}%
+                    </p>
+                  </div>
+                  <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#e8e6dc] print:hidden">
+                    <div className="flex h-full">
+                      <motion.div
+                        className="h-full bg-[#d97757]"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${inProgressRate}%` }}
+                        transition={{ duration: 0.5 }}
+                      />
+                      <motion.div
+                        className="h-full bg-[#4f8a5b]"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${completionRate}%` }}
+                        transition={{ duration: 0.5, delay: 0.05 }}
+                      />
+                    </div>
+                  </div>
+                </article>
+              </div>
+
               <motion.div
-                layout
                 variants={containerVariants}
                 initial="hidden"
                 animate="show"
-                className="flex flex-col gap-4 pb-24 w-full items-stretch"
+                className="space-y-4"
               >
                 {visibleTasks.map((task) => {
-                  const isDone = task.status === 'done';
-                  const isInProgress = task.status === 'in-progress';
-                  const statusCardClasses = isDone
-                    ? "border-emerald-200/70 dark:border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-500/10 opacity-85 shadow-sm shadow-emerald-100/60 dark:shadow-[0_0_20px_rgba(16,185,129,0.08)] print:bg-white print:border-slate-300 print:shadow-none"
-                    : isInProgress
-                      ? "border-purple-200/70 dark:border-purple-500/30 bg-white dark:bg-slate-900 shadow-sm hover:shadow-md dark:shadow-[0_0_15px_rgba(168,85,247,0.05)] print:bg-white print:border-slate-300 print:shadow-none"
-                      : "border-slate-200 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-slate-700 hover:shadow-xl dark:shadow-none shadow-slate-200/40 print:bg-white print:border-slate-300 print:shadow-none";
+                  const isDone = task.status === "done";
+                  const isEditing = editingTaskId === task.id && Boolean(taskDraft);
 
                   return (
-                    <motion.div
+                    <motion.article
                       key={task.id}
-                      layout
                       variants={itemVariants}
                       className={cn(
-                        "group w-full bg-white dark:bg-slate-900 border transition-all duration-300 rounded-[2rem] p-8 flex flex-col relative overflow-hidden print:break-inside-avoid shadow-lg hover:shadow-2xl hover:-translate-y-1",
-                        statusCardClasses
+                        "surface-card print-safe-motion rounded-[1.5rem] border bg-[#faf9f5] p-6 whisper-shadow print-card",
+                        isDone ? "border-[#d3e5d7]" : "border-[#f0eee6]",
                       )}
                     >
-                      {/* Priority Accent Line */}
-                      <div className={cn(
-                        "absolute top-0 inset-x-0 h-1.5 opacity-90 dark:opacity-80 print:h-2 print:opacity-100",
-                        isDone ? 'bg-gradient-to-r from-emerald-500 to-lime-400' :
-                        isInProgress ? 'bg-gradient-to-r from-purple-500 to-fuchsia-400' :
-                        task.priority === 'High' ? 'bg-gradient-to-r from-rose-500 to-red-400 dark:from-red-500 dark:to-rose-400' :
-                        task.priority === 'Medium' ? 'bg-gradient-to-r from-amber-500 to-orange-400' : 'bg-gradient-to-r from-blue-500 to-cyan-400'
-                      )} />
-
-                      <div className="flex items-start justify-between mb-5 mt-1 align-middle">
-                        
-                        {/* Custom Dropdown UI Wrapper */}
-                        <div className="relative inline-block">
-                          <select
-                            value={task.status}
-                            onChange={(e) => handleStatusChange(task.id, e.target.value as TaskRow['status'])}
-                            className={cn(
-                              "appearance-none text-xs font-bold px-4 py-2.5 pr-10 rounded-xl outline-none cursor-pointer border transition-all duration-300 shadow-sm dark:backdrop-blur-md print:bg-transparent print:border-none print:shadow-none print:p-0 print:text-slate-900 group-hover:shadow-md",
-                              task.status === 'todo' ? "bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10" :
-                              task.status === 'in-progress' ? "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30 hover:bg-purple-100 dark:hover:bg-purple-500/20" :       
-                              "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
-                            )}
-                          >
-                            <option value="todo" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">To Do</option>
-                            <option value="in-progress" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">In Progress</option>
-                            <option value="done" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">Done</option>
-                          </select>
-                          <div className={cn("absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-80 dark:opacity-70 print:hidden transition-transform duration-300 group-hover:translate-y-[-40%]", task.status === 'todo' ? "text-slate-600 dark:text-inherit" : task.status === 'in-progress' ? "text-purple-700 dark:text-purple-300" : "text-emerald-700 dark:text-emerald-300")}>
-                            <ChevronDown className="w-4 h-4" />
+                      <div className="mb-4 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <div className="relative print:hidden">
+                            <select
+                              value={task.status}
+                              onChange={(event) =>
+                                handleStatusChange(task.id, event.target.value as TaskStatus)
+                              }
+                              className={cn(
+                                "planner-select planner-select-sm",
+                                task.status === "todo" &&
+                                  "border-[#e8e6dc] bg-[#f5f4ed] text-[#5e5d59]",
+                                task.status === "in-progress" &&
+                                  "border-[#f0d8cf] bg-[#fff4ef] text-[#a35237]",
+                                task.status === "done" &&
+                                  "border-[#d3e5d7] bg-[#edf7ef] text-[#3d6b46]",
+                              )}
+                            >
+                              <option value="todo">To Do</option>
+                              <option value="in-progress">In Progress</option>
+                              <option value="done">Done</option>
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#87867f]" />
                           </div>
+
+                          <span className="hidden rounded-full border border-[#e8e6dc] bg-[#f5f4ed] px-3 py-1 text-xs font-semibold text-[#5e5d59] print:inline-flex">
+                            {statusLabelMap[task.status]}
+                          </span>
+
+                          {!isEditing && (
+                            <button
+                              type="button"
+                              onClick={() => startTaskEdit(task)}
+                              disabled={isBusy}
+                              className="inline-flex items-center gap-1 rounded-lg border border-[#e8e6dc] bg-[#f5f4ed] px-2.5 py-1.5 text-xs font-semibold text-[#5e5d59] transition hover:bg-[#efede4] disabled:cursor-not-allowed disabled:opacity-60 print:hidden"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Edit
+                            </button>
+                          )}
                         </div>
 
-                        <span className={cn(
-                          "text-[10px] uppercase tracking-widest font-extrabold px-3 py-1.5 rounded-[2rem] border bg-opacity-10 dark:backdrop-blur-sm transition-all duration-300 group-hover:shadow-[0_4px_12px_rgba(0,0,0,0.05)]",
-                          isDone ? "text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 print:text-emerald-700 print:bg-transparent print:border-emerald-500" :
-                          task.priority === 'High' ? "text-rose-600 dark:text-red-400 border-rose-200 dark:border-red-500/30 bg-rose-50 dark:bg-red-500/10 print:text-rose-700 print:bg-transparent print:border-rose-500" :
-                          task.priority === 'Medium' ? "text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 print:text-amber-700 print:bg-transparent print:border-amber-500" :
-                          "text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 print:text-blue-700 print:bg-transparent print:border-blue-500"
-                        )}>
+                        <span
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
+                            task.priority === "High" &&
+                              "border-[#f0d6d1] bg-[#fff3f1] text-[#b53333]",
+                            task.priority === "Medium" &&
+                              "border-[#efdfc4] bg-[#fdf7ec] text-[#a06d28]",
+                            task.priority === "Low" &&
+                              "border-[#d7e3ef] bg-[#f1f6fb] text-[#44658a]",
+                          )}
+                        >
                           {task.priority}
                         </span>
                       </div>
 
-                      <h4 className={cn("text-xl font-bold mb-3 leading-snug transition-all print:text-slate-900 print:no-underline print:opacity-100", isDone ? "text-emerald-800 dark:text-emerald-100 line-through decoration-emerald-300 dark:decoration-emerald-400/60 print:text-emerald-900" : "text-slate-900 dark:text-white") }>
-                        {task.title}
-                      </h4>
-                      
-                      <p className={cn("text-sm leading-relaxed flex-grow print:text-slate-700", isDone ? "text-emerald-900/80 dark:text-emerald-100/80 print:text-emerald-800" : "text-slate-600 dark:text-slate-400") }>
-                        {task.description}
-                      </p>
-                      
-                      <div className="mt-8 pt-5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-slate-500 dark:text-slate-400 text-sm font-semibold uppercase tracking-wider print:border-slate-200 print:text-slate-500">
-                        <div className="flex items-center gap-2">
-                          <Hourglass className={cn("w-4 h-4 print:text-slate-500", isDone ? "text-emerald-500/80 print:text-emerald-600" : "text-indigo-500/70")} />
-                          <span className="print:text-slate-600">{task.estimated_hours} Hours</span>
+                      {isEditing && taskDraft ? (
+                        <div className="space-y-3">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="block">
+                              <span className="label-caps text-[#87867f]">Task ID</span>
+                              <input
+                                value={taskDraft.task_id}
+                                onChange={(event) => handleTaskDraftChange("task_id", event.target.value)}
+                                className="planner-select mt-1"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="label-caps text-[#87867f]">Priority</span>
+                              <div className="relative mt-1">
+                                <select
+                                  value={taskDraft.priority}
+                                  onChange={(event) =>
+                                    handleTaskDraftChange("priority", event.target.value as TaskPriority)
+                                  }
+                                  className="planner-select"
+                                >
+                                  <option value="High">High</option>
+                                  <option value="Medium">Medium</option>
+                                  <option value="Low">Low</option>
+                                </select>
+                                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#87867f]" />
+                              </div>
+                            </label>
+                          </div>
+
+                          <label className="block">
+                            <span className="label-caps text-[#87867f]">Title</span>
+                            <input
+                              value={taskDraft.title}
+                              onChange={(event) => handleTaskDraftChange("title", event.target.value)}
+                              className="planner-select mt-1"
+                            />
+                          </label>
+
+                          <label className="block">
+                            <span className="label-caps text-[#87867f]">Description</span>
+                            <textarea
+                              value={taskDraft.description}
+                              onChange={(event) => handleTaskDraftChange("description", event.target.value)}
+                              rows={3}
+                              className="planner-select mt-1 resize-none"
+                            />
+                          </label>
+
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <label className="block">
+                              <span className="label-caps text-[#87867f]">Hours</span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={taskDraft.estimated_hours}
+                                onChange={(event) =>
+                                  handleTaskDraftChange("estimated_hours", event.target.value)
+                                }
+                                className="planner-select mt-1"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="label-caps text-[#87867f]">Status</span>
+                              <div className="relative mt-1">
+                                <select
+                                  value={taskDraft.status}
+                                  onChange={(event) =>
+                                    handleTaskDraftChange("status", event.target.value as TaskStatus)
+                                  }
+                                  className="planner-select"
+                                >
+                                  <option value="todo">To Do</option>
+                                  <option value="in-progress">In Progress</option>
+                                  <option value="done">Done</option>
+                                </select>
+                                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#87867f]" />
+                              </div>
+                            </label>
+
+                            <label className="block">
+                              <span className="label-caps text-[#87867f]">Recommended Date</span>
+                              <input
+                                type="date"
+                                value={taskDraft.recommended_date}
+                                onChange={(event) =>
+                                  handleTaskDraftChange("recommended_date", event.target.value)
+                                }
+                                className="planner-select planner-date-input mt-1"
+                              />
+                            </label>
+                          </div>
+
+                          <label className="block">
+                            <span className="label-caps text-[#87867f]">Dependencies (comma-separated task IDs)</span>
+                            <input
+                              value={taskDraft.dependencies}
+                              onChange={(event) =>
+                                handleTaskDraftChange("dependencies", event.target.value)
+                              }
+                              className="planner-select mt-1"
+                              placeholder="T1, T2"
+                            />
+                          </label>
+
+                          <div className="flex flex-wrap gap-2 pt-1 print:hidden">
+                            <button
+                              onClick={saveTaskEdit}
+                              className="inline-flex items-center gap-2 rounded-lg border border-[#c96442] bg-[#c96442] px-3 py-2 text-xs font-semibold text-[#faf9f5] transition hover:bg-[#b65b3c]"
+                            >
+                              <Save className="h-3.5 w-3.5" />
+                              Save Task
+                            </button>
+                            <button
+                              onClick={cancelTaskEdit}
+                              className="inline-flex items-center gap-2 rounded-lg border border-[#e8e6dc] bg-[#f5f4ed] px-3 py-2 text-xs font-semibold text-[#5e5d59] transition hover:bg-[#efede4]"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                        
-                        {isDone && <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 print:text-emerald-700"><CheckCircle2 className="w-4 h-4" /> Executed</span>}
-                      </div>
-                    </motion.div>
+                      ) : (
+                        <>
+                          <h3
+                            className={cn(
+                              "editorial-title flex items-center gap-3 text-[30px] leading-[1.2]",
+                              isDone && "text-[#5f7f66] line-through decoration-[#8ab596]",
+                            )}
+                          >
+                            <span className="text-sm font-semibold uppercase tracking-wide text-[#87867f]">
+                              {task.task_id}
+                            </span>
+                            <span>{task.title}</span>
+                          </h3>
+
+                          <p className="mt-2 text-[16px] leading-7 text-[#5e5d59]">{task.description}</p>
+
+                          {task.dependencies.length > 0 && (
+                            <div className="mt-4 flex flex-wrap gap-2 print:hidden">
+                              {task.dependencies.map((dependency) => (
+                                <span
+                                  key={`${task.id}-${dependency}`}
+                                  className="rounded-full border border-[#e8e6dc] bg-[#f5f4ed] px-3 py-1 text-xs font-semibold text-[#5e5d59]"
+                                >
+                                  Requires {dependency}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-5 grid gap-3 border-t border-[#f0eee6] pt-4 text-sm text-[#5e5d59] sm:grid-cols-2">
+                            <p className="inline-flex items-center gap-2 font-semibold">
+                              <Hourglass className="h-4 w-4" />
+                              {task.estimated_hours} hours
+                            </p>
+                            <p className="inline-flex items-center gap-2 font-semibold">
+                              <CalendarClock className="h-4 w-4" />
+                              {task.recommended_date
+                                ? formatDateLabel(task.recommended_date)
+                                : "No suggested date"}
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </motion.article>
                   );
                 })}
               </motion.div>
 
-            </div>
-          </motion.main>
-        )}
-      </AnimatePresence>
+              <article className="surface-card rounded-2xl border border-[#f0eee6] bg-[#faf9f5] p-5 warm-ring print-card">
+                <p className="label-caps text-[#87867f]">Reviewer Critique</p>
+                <p className="mt-2 text-[16px] leading-7 text-[#5e5d59]">
+                  {result?.review_summary || "No review summary available."}
+                </p>
+              </article>
 
-    </motion.div>
+              {dailyStandup && (
+                <article className="surface-card rounded-2xl border border-[#f0eee6] bg-[#faf9f5] p-5 warm-ring print-card">
+                  <p className="label-caps text-[#87867f]">Daily Standup Mode</p>
+                  <p className="mt-2 text-[16px] leading-7 text-[#5e5d59]">
+                    {dailyStandup.standup_summary}
+                  </p>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-3 print:block print:space-y-3">
+                    <div className="rounded-xl border border-[#d3e5d7] bg-[#edf7ef] p-3">
+                      <p className="label-caps text-[#3d6b46]">Done</p>
+                      <p className="mt-1 text-sm text-[#3d6b46]">
+                        {dailyStandup.done.length > 0
+                          ? dailyStandup.done.join("; ")
+                          : "No completed tasks yet."}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-[#efdfc4] bg-[#fdf7ec] p-3">
+                      <p className="label-caps text-[#a06d28]">In Progress</p>
+                      <p className="mt-1 text-sm text-[#a06d28]">
+                        {dailyStandup.in_progress.length > 0
+                          ? dailyStandup.in_progress.join("; ")
+                          : "No active tasks right now."}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-[#f0d6d1] bg-[#fff3f1] p-3">
+                      <p className="label-caps text-[#b53333]">Blocked</p>
+                      <p className="mt-1 text-sm text-[#b53333]">
+                        {dailyStandup.blocked.length > 0
+                          ? dailyStandup.blocked.join("; ")
+                          : "No blockers detected."}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              )}
+
+              <article className="surface-card rounded-2xl border border-[#f0eee6] bg-[#faf9f5] p-5 warm-ring print:hidden">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-[#87867f]" />
+                  <p className="label-caps text-[#87867f]">Plan History (Session)</p>
+                </div>
+
+                {planHistory.length === 0 ? (
+                  <p className="mt-2 text-sm text-[#5e5d59]">
+                    No snapshots yet. Every generation and reviewer rerun gets stored here.
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {planHistory.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex flex-col justify-between gap-2 rounded-xl border border-[#e8e6dc] bg-[#f5f4ed] px-3 py-3 sm:flex-row sm:items-center"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[#4d4c48]">{item.label}</p>
+                          <p className="truncate text-xs text-[#87867f]">{item.goal_preview}</p>
+                          <p className="text-[11px] text-[#87867f]">{formatDateTimeLabel(item.created_at)}</p>
+                        </div>
+                        <button
+                          onClick={() => handleLoadHistorySnapshot(item)}
+                          className="inline-flex items-center gap-2 rounded-lg border border-[#e8e6dc] bg-[#faf9f5] px-3 py-1.5 text-xs font-semibold text-[#5e5d59] transition hover:bg-[#efede4]"
+                        >
+                          <History className="h-3.5 w-3.5" />
+                          Load Snapshot
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </article>
+            </motion.section>
+          )}
+        </AnimatePresence>
+
+        {!hasResult && loadingPhase === "none" && (
+          <section className="surface-card rounded-[2rem] border border-[#f0eee6] bg-[#faf9f5] p-6 text-[#5e5d59] whisper-shadow print-card">
+            <h3 className="editorial-title text-3xl text-[#141413]">How this layout works</h3>
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <article className="surface-card rounded-xl border border-[#e8e6dc] bg-[#f5f4ed] p-4 warm-ring print-card">
+                <p className="label-caps text-[#87867f]">1. Draft</p>
+                <p className="mt-1 text-sm leading-6">
+                  Provide goal, priority, and deadline. Inputs are constrained to avoid invalid planning context.
+                </p>
+              </article>
+              <article className="surface-card rounded-xl border border-[#e8e6dc] bg-[#f5f4ed] p-4 warm-ring print-card">
+                <p className="label-caps text-[#87867f]">2. Refine</p>
+                <p className="mt-1 text-sm leading-6">
+                  Manually edit tasks and rerun the reviewer agent to critique your adjusted execution plan.
+                </p>
+              </article>
+              <article className="surface-card rounded-xl border border-[#e8e6dc] bg-[#f5f4ed] p-4 warm-ring print-card">
+                <p className="label-caps text-[#87867f]">3. Operate</p>
+                <p className="mt-1 text-sm leading-6">
+                  Use daily standup mode, inspect live agent-step trace, and reload prior session snapshots from plan history.
+                </p>
+              </article>
+            </div>
+          </section>
+        )}
+      </main>
+
+      <footer className="border-t border-[#e8e6dc] bg-[#f5f4ed] py-6 text-center text-xs text-[#87867f] print:hidden">
+        <p className="inline-flex items-center gap-1">
+          <Clock3 className="h-3.5 w-3.5" />
+          Built with warm editorial pacing and agentic execution telemetry.
+        </p>
+      </footer>
+    </div>
   );
 }

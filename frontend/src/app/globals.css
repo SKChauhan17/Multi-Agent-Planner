@@ -1,34 +1,191 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 :root {
   color-scheme: light;
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-html.dark {
-  color-scheme: dark;
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --paper: #f5f4ed;
+  --ivory: #faf9f5;
+  --ink: #141413;
+  --brand: #c96442;
+  --brand-soft: #d97757;
+  --text-secondary: #5e5d59;
+  --text-tertiary: #87867f;
+  --text-strong: #4d4c48;
+  --border-soft: #f0eee6;
+  --border-warm: #e8e6dc;
+  --ring-warm: #d1cfc5;
+  --ring-deep: #c2c0b6;
+  --focus-blue: #3898ec;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-anthropic-sans);
+  --font-mono: var(--font-anthropic-mono);
+  --font-serif: var(--font-anthropic-serif);
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
   overflow-x: hidden;
 }
 
-/* Elegant Scrollbars */
+body {
+  font-family: var(--font-anthropic-sans), "Segoe UI", sans-serif;
+  line-height: 1.6;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-anthropic-serif), Georgia, serif;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-anthropic-mono), "Courier New", monospace;
+}
+
+::selection {
+  background: rgba(201, 100, 66, 0.28);
+  color: var(--ink);
+}
+
+textarea,
+input,
+select,
+button {
+  font: inherit;
+}
+
+.warm-ring {
+  box-shadow: 0 0 0 1px var(--ring-warm);
+}
+
+.warm-ring-deep {
+  box-shadow: 0 0 0 1px var(--ring-deep);
+}
+
+.whisper-shadow {
+  box-shadow: rgba(0, 0, 0, 0.05) 0 4px 24px;
+}
+
+.editorial-title {
+  font-family: var(--font-anthropic-serif), Georgia, serif;
+  font-weight: 500;
+  letter-spacing: normal;
+}
+
+.label-caps {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12px;
+  text-transform: uppercase;
+}
+
+.planner-select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: 1px solid var(--border-warm);
+  background: var(--paper);
+  color: var(--text-strong);
+  border-radius: 12px;
+  min-height: 2.75rem;
+  padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  box-shadow: 0 0 0 1px var(--ring-warm);
+  outline: none;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+}
+
+select.planner-select {
+  cursor: pointer;
+}
+
+input.planner-select {
+  padding-right: 0.75rem;
+}
+
+.planner-select:hover {
+  border-color: var(--ring-warm);
+  background: #f2f0e8;
+}
+
+.planner-select:focus-visible {
+  border-color: var(--focus-blue);
+  box-shadow: 0 0 0 1px var(--focus-blue), 0 0 0 4px rgba(56, 152, 236, 0.22);
+}
+
+.planner-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.planner-select-sm {
+  min-height: 2rem;
+  border-radius: 10px;
+  padding: 0.34rem 2.2rem 0.34rem 0.7rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.planner-date-input {
+  appearance: auto;
+  -webkit-appearance: auto;
+  -moz-appearance: auto;
+  padding-right: 0.75rem !important;
+}
+
+.planner-date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 1;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-left: 0.25rem;
+  filter: saturate(0) brightness(0.45);
+}
+
+.planner-date-input::-moz-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 1;
+}
+
+.print-card {
+  break-inside: avoid-page;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+}
+
+.surface-card {
+  break-inside: avoid-page;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+}
+
+.print-safe-motion {
+  transform: none !important;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -39,18 +196,54 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #cbd5e1;
+  background-color: #c2bfb4;
   border-radius: 20px;
 }
 
-html.dark ::-webkit-scrollbar-thumb {
-  background-color: #334155;
-}
-
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #94a3b8;
+  background-color: #a8a498;
 }
 
-html.dark ::-webkit-scrollbar-thumb:hover {
-  background-color: #475569;
+@media print {
+  @page {
+    margin: 1in;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #141413 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-card {
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+
+  .surface-card {
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+
+  .print-safe-grid {
+    display: block !important;
+  }
+
+  .print-safe-grid > * {
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    margin-bottom: 0.18in;
+  }
+
+  .print-safe-grid > *:last-child {
+    margin-bottom: 0;
+  }
+
+  .print-safe-motion {
+    transform: none !important;
+  }
 }
