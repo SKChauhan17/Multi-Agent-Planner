@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend - Multi-Agent Planner
 
-## Getting Started
+This app is the user-facing planning studio built with Next.js 16 and React 19.
+It handles goal input, plan generation, manual task editing, reviewer reruns, daily standup summaries, and in-session plan history.
 
-First, run the development server:
+## Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Next.js App (localhost:3000)                 │
+│                                                                      │
+│  Goal + Constraints UI  ──┐                                          │
+│  Task Cards + Editors     ├──► Axios Client ──► AI Service (8000)   │
+│  Reviewer/Standup Panels  ┘                └──► Task API (4000/api) │
+│                                                                      │
+│  Local State Slices:                                                 │
+│  - plan result                                                       │
+│  - agent step trace                                                  │
+│  - standup snapshot                                                  │
+│  - plan history (session)                                            │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Key Features
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Goal brief with optional deadline and priority inputs.
+- Live generation phases: planning, reviewing, finalizing.
+- Editable task cards with persistence for saved tasks.
+- Re-run reviewer agent on manually edited plans.
+- Daily standup mode (done / in-progress / blocked).
+- Session plan history snapshots with one-click restore.
+- PDF export via print-friendly layout.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Tech Stack
 
-## Learn More
+- Next.js 16
+- React 19
+- TypeScript
+- Framer Motion
+- Lucide Icons
+- Tailwind CSS
+- Axios
 
-To learn more about Next.js, take a look at the following resources:
+## Environment Variables
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Copy and configure:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```powershell
+Copy-Item .env.example .env.local
+```
 
-## Deploy on Vercel
+| Variable | Required | Description |
+|---|---|---|
+| `NEXT_PUBLIC_AI_SERVICE_URL` | Yes | Base URL for FastAPI service |
+| `NEXT_PUBLIC_TASK_API_URL` | Yes | Base URL for Task API including `/api` |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Setup & Run
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+From repository root:
+
+```powershell
+npm install --prefix frontend
+npm run dev --prefix frontend
+```
+
+Open http://localhost:3000.
+
+## Build Commands
+
+```powershell
+npm run build --prefix frontend
+npm run start --prefix frontend
+```
+
+## Important Files
+
+- `src/app/page.tsx`: main planner workflow and UI state orchestration.
+- `src/app/globals.css`: design tokens, selectors, print safety.
+- `.env.example`: client runtime endpoint config.
+
+## Integration Notes
+
+- AI endpoints consumed:
+	- `POST /generate-plan`
+	- `POST /re-review-plan`
+	- `POST /daily-standup`
+- Task API endpoint consumed:
+	- `PATCH /api/tasks/:id`
