@@ -1,18 +1,41 @@
-# Multi-Agent Planner
+<p align="center">
+    <img src=".github/assets/readme-hero.svg" alt="Multi-Agent Planner Hero" width="100%" />
+</p>
 
-A warm, editorial-style planning workspace that turns one goal into a realistic roadmap you can edit, re-review, and execute.
+<p align="center">
+    <img src="https://img.shields.io/badge/Monorepo-Production_Ready-141413?style=for-the-badge" alt="Monorepo" />
+    <img src="https://img.shields.io/badge/Frontend-Next.js_16-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="Frontend" />
+    <img src="https://img.shields.io/badge/AI-FastAPI-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="AI Service" />
+    <img src="https://img.shields.io/badge/Data-SQLite-f5f4ed?style=for-the-badge&labelColor=141413&color=e8e6dc" alt="SQLite" />
+</p>
 
-Documentation style note: this README set follows the clarity and tone direction defined in `DESIGN.md`.
+<p align="center">
+    A warm, editorial planning workspace that turns one goal into a realistic roadmap you can edit, re-review, and execute.
+</p>
 
-## At A Glance
+<p align="center">
+    <a href="#quick-start">Quick Start</a> ·
+    <a href="#architecture">Architecture</a> ·
+    <a href="#api-surface">API Surface</a> ·
+    <a href="#service-guides">Service Guides</a>
+</p>
 
-| Layer | Stack | Responsibility |
+---
+
+## Why This Feels Different
+
+Most planners stop at generation. This one stays useful after generation.
+
+| Stage | What You Get | Why It Matters |
 |---|---|---|
-| Frontend | Next.js 16 + React 19 | Goal capture, task editing, history, standup view |
-| AI Service | FastAPI + model fallback chain | Planner/reviewer orchestration and normalization |
-| Task API | Express + TypeScript + SQLite | Durable storage for plans and task lifecycle |
+| Plan | Multi-step roadmap from one goal | Fast first draft |
+| Review | Dedicated reviewer pass | Better realism and sequencing |
+| Edit | Manual task refinement | Human control where it counts |
+| Operate | Standups, status flow, history | Day-to-day execution clarity |
 
-## Architecture (Clean ASCII)
+Documentation style follows the language and visual direction in `DESIGN.md`.
+
+## Architecture
 
 ```text
 ┌───────────────────────────────────────────────────────────────────────────────┐
@@ -25,17 +48,25 @@ Documentation style note: this README set follows the clarity and tone direction
 │ http://localhost:3000        │ ──────────────────────────────> │ http://localhost:8000        │
 │                              │      POST /daily-standup       │                              │
 └───────────────┬──────────────┘ ──────────────────────────────> └──────────────┬──────────────┘
-                │                     reviewed plan + standup                   │
-                │ <───────────────────────────────────────────────────────────── │
-                │                                                               │ POST /api/plans
-                │ PATCH /api/tasks/:id                                          │
-                ▼                                                               ▼
+                                │                     reviewed plan + standup                   │
+                                │ <───────────────────────────────────────────────────────────── │
+                                │                                                               │ POST /api/plans
+                                │ PATCH /api/tasks/:id                                          │
+                                ▼                                                               ▼
 ┌──────────────────────────────┐      read/write plans + tasks   ┌──────────────────────────────┐
 │ Task API                     │ ───────────────────────────────> │ SQLite planner.db            │
 │ Express + TypeScript         │ <─────────────────────────────── │ task-api/data/planner.db     │
 │ http://localhost:4000        │           query results          │                              │
 └──────────────────────────────┘                                  └──────────────────────────────┘
 ```
+
+## Stack Snapshot
+
+| Layer | Stack | Responsibility |
+|---|---|---|
+| Frontend | Next.js 16 + React 19 | Goal capture, task editing, standup and history UI |
+| AI Service | FastAPI + provider fallback chain | Planner/reviewer orchestration and normalization |
+| Task API | Express + TypeScript + SQLite | Durable storage and task lifecycle updates |
 
 ## Repository Map
 
@@ -50,13 +81,13 @@ multi-agent-planner/
 
 ## Quick Start
 
-### 1) Prerequisites
+### Prerequisites
 
 - Node.js 20+
 - Python 3.10+
 - npm 10+
 
-### 2) Create local env files
+### 1) Create local env files
 
 ```powershell
 Copy-Item ai-service/.env.example ai-service/.env
@@ -64,9 +95,9 @@ Copy-Item task-api/.env.example task-api/.env
 Copy-Item frontend/.env.example frontend/.env.local
 ```
 
-Add your API keys in `ai-service/.env`.
+Add provider keys in `ai-service/.env`.
 
-### 3) Install dependencies
+### 2) Install dependencies
 
 ```powershell
 python -m venv ai-service/venv
@@ -75,7 +106,7 @@ npm install --prefix task-api
 npm install --prefix frontend
 ```
 
-### 4) Run all services (three terminals)
+### 3) Run all services (three terminals)
 
 Terminal A:
 
@@ -98,6 +129,17 @@ npm run dev --prefix frontend
 
 Open http://localhost:3000.
 
+<details>
+    <summary><strong>One-command build validation checklist</strong></summary>
+
+```powershell
+npm run build --prefix task-api
+npm run build --prefix frontend
+python -m compileall ai-service
+```
+
+</details>
+
 ## API Surface
 
 | Service | Endpoint | Purpose |
@@ -112,12 +154,14 @@ Open http://localhost:3000.
 
 ## Service Guides
 
-- [AI Service Guide](ai-service/README.md)
-- [Task API Guide](task-api/README.md)
-- [Frontend Guide](frontend/README.md)
+| Service | Guide |
+|---|---|
+| AI Service | [ai-service/README.md](ai-service/README.md) |
+| Task API | [task-api/README.md](task-api/README.md) |
+| Frontend | [frontend/README.md](frontend/README.md) |
 
 ## Troubleshooting
 
 - If Python imports fail, run commands with `ai-service/venv/Scripts/python.exe`.
 - If plan persistence falls back locally, verify Task API on `http://localhost:4000`.
-- If the frontend looks stale, restart Next.js and hard refresh the browser.
+- If the frontend appears stale, restart Next.js and hard refresh the browser.
