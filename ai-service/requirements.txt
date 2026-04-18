@@ -5,3 +5,4 @@ requests
 python-dotenv
 groq
 openai
+setuptools>=78.1.1

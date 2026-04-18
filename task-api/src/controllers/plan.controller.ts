@@ -14,6 +14,7 @@ import type {
 
 const VALID_PRIORITIES: TaskPriority[] = ['High', 'Medium', 'Low'];
 const VALID_STATUSES: TaskStatus[] = ['todo', 'in-progress', 'done'];
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * POST /plans
@@ -107,7 +108,7 @@ export async function handleCreatePlan(req: Request, res: Response): Promise<voi
 
     res.status(201).json(response);
   } catch (err) {
-    console.error('Error creating plan:', err);
+    console.error('Error creating plan.', err instanceof Error ? err.message : 'unknown');
     const error: ApiErrorResponse = {
       success: false,
       error: { code: 500, message: 'Internal server error while creating the plan.' },
@@ -128,6 +129,15 @@ export async function handleGetPlan(req: Request, res: Response): Promise<void> 
       const error: ApiErrorResponse = {
         success: false,
         error: { code: 400, message: 'Plan ID is required.' },
+      };
+      res.status(400).json(error);
+      return;
+    }
+
+    if (!UUID_PATTERN.test(id)) {
+      const error: ApiErrorResponse = {
+        success: false,
+        error: { code: 400, message: 'Plan ID must be a valid UUID.' },
       };
       res.status(400).json(error);
       return;
@@ -157,7 +167,7 @@ export async function handleGetPlan(req: Request, res: Response): Promise<void> 
 
     res.status(200).json(response);
   } catch (err) {
-    console.error('Error fetching plan:', err);
+    console.error('Error fetching plan.', err instanceof Error ? err.message : 'unknown');
     const error: ApiErrorResponse = {
       success: false,
       error: { code: 500, message: 'Internal server error while fetching the plan.' },
@@ -183,6 +193,15 @@ export async function handleDeletePlan(req: Request, res: Response): Promise<voi
       return;
     }
 
+    if (!UUID_PATTERN.test(id)) {
+      const error: ApiErrorResponse = {
+        success: false,
+        error: { code: 400, message: 'Plan ID must be a valid UUID.' },
+      };
+      res.status(400).json(error);
+      return;
+    }
+
     const deleted = await deletePlan(id);
 
     if (!deleted) {
@@ -201,7 +220,7 @@ export async function handleDeletePlan(req: Request, res: Response): Promise<voi
 
     res.status(200).json(response);
   } catch (err) {
-    console.error('Error deleting plan:', err);
+    console.error('Error deleting plan.', err instanceof Error ? err.message : 'unknown');
     const error: ApiErrorResponse = {
       success: false,
       error: { code: 500, message: 'Internal server error while deleting the plan.' },

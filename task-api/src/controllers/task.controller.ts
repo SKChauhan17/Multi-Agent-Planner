@@ -11,6 +11,7 @@ import type {
 
 const VALID_PRIORITIES: TaskPriority[] = ['High', 'Medium', 'Low'];
 const VALID_STATUSES: TaskStatus[] = ['todo', 'in-progress', 'done'];
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * PATCH /tasks/:id
@@ -24,6 +25,15 @@ export async function handleUpdateTaskStatus(req: Request, res: Response): Promi
       const error: ApiErrorResponse = {
         success: false,
         error: { code: 400, message: 'Task ID is required.' },
+      };
+      res.status(400).json(error);
+      return;
+    }
+
+    if (!UUID_PATTERN.test(id)) {
+      const error: ApiErrorResponse = {
+        success: false,
+        error: { code: 400, message: 'Task ID must be a valid UUID.' },
       };
       res.status(400).json(error);
       return;
@@ -194,7 +204,7 @@ export async function handleUpdateTaskStatus(req: Request, res: Response): Promi
 
     res.status(200).json(response);
   } catch (err) {
-    console.error('Error updating task status:', err);
+    console.error('Error updating task status.', err instanceof Error ? err.message : 'unknown');
     const error: ApiErrorResponse = {
       success: false,
       error: { code: 500, message: 'Internal server error while updating the task.' },

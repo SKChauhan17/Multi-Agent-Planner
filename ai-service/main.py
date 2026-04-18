@@ -1,9 +1,14 @@
 import json
+import logging
+import os
+import time
 import requests
+from collections import defaultdict, deque
 from pathlib import Path
 from datetime import date, datetime, timedelta
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -15,18 +20,47 @@ from agents.reviewer import review_plan
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=ENV_PATH, override=True)
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+LOGGER = logging.getLogger("multi-agent-planner")
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+
+    try:
+        return max(minimum, int(raw))
+    except ValueError:
+        LOGGER.warning("Invalid %s value. Falling back to default.", name)
+        return default
+
+
+def _parse_allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    parsed = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return parsed or ["http://localhost:3000"]
+
 VALID_PRIORITIES = {"High", "Medium", "Low"}
 VALID_STATUSES = {"todo", "in-progress", "done"}
 MIN_TASK_COUNT = 5
 MAX_TASK_COUNT = 10
+TASK_API_BASE_URL = os.getenv("TASK_API_BASE_URL", "http://localhost:4000").rstrip("/")
+TASK_API_TIMEOUT_SECONDS = _env_int("TASK_API_TIMEOUT_SECONDS", 30)
+TASK_API_INTERNAL_TOKEN = os.getenv("TASK_API_INTERNAL_TOKEN", "").strip()
+RATE_LIMIT_WINDOW_SECONDS = _env_int("RATE_LIMIT_WINDOW_SECONDS", 60)
+RATE_LIMIT_MAX_REQUESTS = _env_int("RATE_LIMIT_MAX_REQUESTS", 90)
+ALLOWED_ORIGINS = _parse_allowed_origins()
+
+REQUEST_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["POST", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -42,6 +76,39 @@ class ReReviewRequest(BaseModel):
 class DailyStandupRequest(BaseModel):
     goal: str
     tasks: list[dict]
+
+
+class TaskUpdateRequest(BaseModel):
+    task_id: str | None = None
+    title: str | None = None
+    description: str | None = None
+    estimated_hours: int | None = None
+    priority: str | None = None
+    status: str | None = None
+    dependencies: list[str] | None = None
+    recommended_date: str | None = None
+
+
+def _task_api_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if TASK_API_INTERNAL_TOKEN:
+        headers["x-internal-api-token"] = TASK_API_INTERNAL_TOKEN
+    return headers
+
+
+def _enforce_rate_limit(http_request: Request) -> None:
+    now = time.time()
+    client_host = http_request.client.host if http_request.client else "unknown"
+    bucket_key = f"{client_host}:{http_request.url.path}"
+    bucket = REQUEST_BUCKETS[bucket_key]
+
+    while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
+        bucket.popleft()
+
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail="Too many requests. Please retry shortly.")
+
+    bucket.append(now)
 
 
 def _normalize_task(task: object, index: int) -> dict | None:
@@ -270,9 +337,12 @@ def _persist_plan(goal: str, tasks: list[dict]) -> dict:
         "tasks": tasks,
     }
 
-    print(f"🚀 DEBUG: Dispatching to Node.js Management API: {node_payload}")
-
-    node_response = requests.post("http://localhost:4000/api/plans", json=node_payload, timeout=30)
+    node_response = requests.post(
+        f"{TASK_API_BASE_URL}/api/plans",
+        json=node_payload,
+        headers=_task_api_headers(),
+        timeout=TASK_API_TIMEOUT_SECONDS,
+    )
     node_response.raise_for_status()
     node_data = node_response.json()
     final_plan = node_data.get("data") if isinstance(node_data, dict) else None
@@ -373,16 +443,18 @@ def _build_daily_standup(goal: str, tasks: list[dict]) -> dict:
     }
 
 @app.post("/generate-plan")
-def generate_plan_endpoint(request: PlanRequest):
+def generate_plan_endpoint(payload: PlanRequest, http_request: Request):
+    _enforce_rate_limit(http_request)
+
     try:
         raw_planner_json = "[]"
         planner_warning = ""
 
         try:
-            raw_planner_json = generate_plan(request.goal)
-        except Exception as planner_error:
-            planner_warning = f"Planner fallback engaged: {planner_error}"
-            print(planner_warning)
+            raw_planner_json = generate_plan(payload.goal)
+        except Exception:
+            planner_warning = "Planner fallback engaged due to upstream model error."
+            LOGGER.warning("Planner fallback engaged.")
 
         planner_tasks: list[dict] = []
         try:
@@ -398,19 +470,18 @@ def generate_plan_endpoint(request: PlanRequest):
             else:
                 planner_candidates = []
             planner_tasks = _normalize_tasks(planner_candidates)
-        except (json.JSONDecodeError, TypeError, ValueError) as parse_error:
-            print(f"WARNING: Planner returned invalid JSON, using empty fallback: {parse_error}")
+        except (json.JSONDecodeError, TypeError, ValueError):
+            LOGGER.warning("Planner returned invalid JSON; using empty fallback.")
 
         reviewed_dict: dict = {}
         review_summary = "Agent review completed and synchronized."
 
         try:
-            reviewed_dict = review_plan(request.goal, raw_planner_json)
-            print("RAW REVIEWER JSON:", reviewed_dict)
+            reviewed_dict = review_plan(payload.goal, raw_planner_json)
             if isinstance(reviewed_dict, dict):
                 review_summary = str(reviewed_dict.get("review_summary") or review_summary)
-        except Exception as review_error:
-            print(f"WARNING: Reviewer fallback engaged: {review_error}")
+        except Exception:
+            LOGGER.warning("Reviewer fallback engaged.")
 
         extracted_tasks = _extract_task_candidates(reviewed_dict)
         safe_tasks = _normalize_tasks(extracted_tasks)
@@ -418,89 +489,139 @@ def generate_plan_endpoint(request: PlanRequest):
         if not safe_tasks:
             safe_tasks = planner_tasks
 
-        safe_tasks = _ensure_task_count(safe_tasks, request.goal)
-        safe_tasks = _ensure_recommended_dates(safe_tasks, request.goal)
+        safe_tasks = _ensure_task_count(safe_tasks, payload.goal)
+        safe_tasks = _ensure_recommended_dates(safe_tasks, payload.goal)
 
         if not safe_tasks:
             if planner_warning:
                 review_summary = f"{planner_warning} {review_summary}".strip()
-            return _build_local_response(request.goal, [], review_summary)
+            return _build_local_response(payload.goal, [], review_summary)
 
         try:
-            final_plan = _persist_plan(request.goal, safe_tasks)
-        except (requests.exceptions.RequestException, ValueError) as node_error:
-            print(f"WARNING: Falling back to local plan response because task API is unavailable: {node_error}")
+            final_plan = _persist_plan(payload.goal, safe_tasks)
+        except (requests.exceptions.RequestException, ValueError):
+            LOGGER.warning("Falling back to local plan response because Task API is unavailable.")
             if planner_warning:
                 review_summary = f"{planner_warning} {review_summary}".strip()
             review_summary = f"{review_summary} Task API persistence unavailable; returned a local fallback plan.".strip()
-            return _build_local_response(request.goal, safe_tasks, review_summary)
+            return _build_local_response(payload.goal, safe_tasks, review_summary)
 
         return {
             "review_summary": review_summary,
             "final_plan": final_plan,
         }
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return _build_local_response(request.goal, [], f"Unexpected backend error: {e}")
+    except Exception:
+        LOGGER.exception("Unexpected backend error while generating plan.")
+        return _build_local_response(
+            payload.goal,
+            [],
+            "Unexpected backend error while generating the plan.",
+        )
 
 
 @app.post("/re-review-plan")
-def rereview_plan_endpoint(request: ReReviewRequest):
+def rereview_plan_endpoint(payload: ReReviewRequest, http_request: Request):
+    _enforce_rate_limit(http_request)
+
     try:
-        base_tasks = _normalize_tasks(request.tasks)
+        base_tasks = _normalize_tasks(payload.tasks)
         if not base_tasks:
             return _build_local_response(
-                request.goal,
+                payload.goal,
                 [],
                 "Reviewer rerun skipped because no task payload was provided.",
             )
 
-        normalized_input_tasks = _ensure_task_count(base_tasks, request.goal)
-        normalized_input_tasks = _ensure_recommended_dates(normalized_input_tasks, request.goal)
+        normalized_input_tasks = _ensure_task_count(base_tasks, payload.goal)
+        normalized_input_tasks = _ensure_recommended_dates(normalized_input_tasks, payload.goal)
 
         review_summary = "Reviewer rerun completed and synchronized."
         reviewed_dict: dict = {}
 
         try:
-            reviewed_dict = review_plan(request.goal, json.dumps({"tasks": normalized_input_tasks}))
+            reviewed_dict = review_plan(payload.goal, json.dumps({"tasks": normalized_input_tasks}))
             if isinstance(reviewed_dict, dict):
                 review_summary = str(reviewed_dict.get("review_summary") or review_summary)
-        except Exception as review_error:
-            print(f"WARNING: Reviewer rerun fallback engaged: {review_error}")
+        except Exception:
+            LOGGER.warning("Reviewer rerun fallback engaged.")
 
         extracted_tasks = _extract_task_candidates(reviewed_dict)
         safe_tasks = _normalize_tasks(extracted_tasks)
         if not safe_tasks:
             safe_tasks = normalized_input_tasks
 
-        safe_tasks = _ensure_task_count(safe_tasks, request.goal)
-        safe_tasks = _ensure_recommended_dates(safe_tasks, request.goal)
+        safe_tasks = _ensure_task_count(safe_tasks, payload.goal)
+        safe_tasks = _ensure_recommended_dates(safe_tasks, payload.goal)
         safe_tasks = _preserve_runtime_fields(normalized_input_tasks, safe_tasks)
 
         try:
-            final_plan = _persist_plan(request.goal, safe_tasks)
-        except (requests.exceptions.RequestException, ValueError) as node_error:
-            print(f"WARNING: Rerun persistence fallback because task API is unavailable: {node_error}")
+            final_plan = _persist_plan(payload.goal, safe_tasks)
+        except (requests.exceptions.RequestException, ValueError):
+            LOGGER.warning("Rerun persistence fallback because Task API is unavailable.")
             review_summary = (
                 f"{review_summary} Task API persistence unavailable; returned a local fallback plan."
             ).strip()
-            return _build_local_response(request.goal, safe_tasks, review_summary)
+            return _build_local_response(payload.goal, safe_tasks, review_summary)
 
         return {
             "review_summary": review_summary,
             "final_plan": final_plan,
         }
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return _build_local_response(request.goal, [], f"Unexpected rerun error: {e}")
+    except Exception:
+        LOGGER.exception("Unexpected backend error while rerunning reviewer.")
+        return _build_local_response(
+            payload.goal,
+            [],
+            "Unexpected backend error while rerunning reviewer.",
+        )
 
 
 @app.post("/daily-standup")
-def daily_standup_endpoint(request: DailyStandupRequest):
-    safe_tasks = _normalize_tasks(request.tasks)
-    safe_tasks = _ensure_recommended_dates(safe_tasks, request.goal)
-    return _build_daily_standup(request.goal, safe_tasks)
+def daily_standup_endpoint(payload: DailyStandupRequest, http_request: Request):
+    _enforce_rate_limit(http_request)
+
+    safe_tasks = _normalize_tasks(payload.tasks)
+    safe_tasks = _ensure_recommended_dates(safe_tasks, payload.goal)
+    return _build_daily_standup(payload.goal, safe_tasks)
+
+
+@app.patch("/update-task/{task_id}")
+def update_task_endpoint(task_id: str, payload: TaskUpdateRequest, http_request: Request):
+    _enforce_rate_limit(http_request)
+
+    if hasattr(payload, "model_dump"):
+        patch_payload = payload.model_dump(exclude_none=True)
+    else:
+        patch_payload = payload.dict(exclude_none=True)
+
+    if not patch_payload:
+        raise HTTPException(status_code=400, detail="At least one mutable task field is required.")
+
+    try:
+        response = requests.patch(
+            f"{TASK_API_BASE_URL}/api/tasks/{task_id}",
+            json=patch_payload,
+            headers=_task_api_headers(),
+            timeout=TASK_API_TIMEOUT_SECONDS,
+        )
+    except requests.exceptions.RequestException as request_error:
+        LOGGER.warning("Task update proxy failed because Task API is unavailable.")
+        raise HTTPException(
+            status_code=502,
+            detail="Task persistence service is unavailable.",
+        ) from request_error
+
+    try:
+        body = response.json()
+    except ValueError:
+        body = {
+            "success": False,
+            "error": {
+                "code": response.status_code,
+                "message": "Task API returned an invalid response.",
+            },
+        }
+
+    return JSONResponse(status_code=response.status_code, content=body)

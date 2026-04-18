@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from typing import List
 
@@ -50,6 +51,8 @@ RETRYABLE_ERROR_MARKERS = (
     "BAD_GATEWAY",
     "TIMEOUT",
 )
+
+LOGGER = logging.getLogger("multi-agent-planner.reviewer")
 
 
 def _sanitize_json_text(raw_text: str) -> str:
@@ -164,27 +167,30 @@ Proposed Tasks (JSON): {planner_json_output}
             return validated_payload.dict()
 
         except (json.JSONDecodeError, ValidationError) as parse_error:
-            print(
-                f"WARNING: {provider}/{model_name} returned invalid JSON schema. "
-                f"Trying next fallback. Details: {parse_error}"
+            LOGGER.warning(
+                "%s/%s returned invalid JSON schema. Trying next fallback.",
+                provider,
+                model_name,
             )
             continue
         except Exception as exc:
             error_str = str(exc).upper()
             if any(marker in error_str for marker in RETRYABLE_ERROR_MARKERS):
-                print(
-                    f"WARNING: {provider}/{model_name} hit a recoverable error. "
-                    "Trying next fallback."
+                LOGGER.warning(
+                    "%s/%s hit a recoverable error. Trying next fallback.",
+                    provider,
+                    model_name,
                 )
                 continue
 
-            print(
-                f"WARNING: {provider}/{model_name} hit a non-retryable error. "
-                f"Trying next fallback. Details: {exc}"
+            LOGGER.warning(
+                "%s/%s hit a non-retryable error. Trying next fallback.",
+                provider,
+                model_name,
             )
             continue
 
-    print("WARNING: all reviewer models failed. Returning structured fallback.")
+    LOGGER.warning("All reviewer models failed. Returning structured fallback.")
     return {
         "tasks": [],
         "revised_tasks": [],

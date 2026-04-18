@@ -313,7 +313,6 @@ export default function Page() {
   const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
 
   const aiServiceUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL ?? "http://localhost:8000";
-  const taskApiUrl = process.env.NEXT_PUBLIC_TASK_API_URL ?? "http://localhost:4000/api";
 
   useEffect(() => {
     const dt = new Date();
@@ -467,7 +466,9 @@ export default function Page() {
     if (taskId.startsWith("local-")) return;
 
     try {
-      const response = await axios.patch(`${taskApiUrl}/tasks/${taskId}`, { status: newStatus });
+      const response = await axios.patch(`${aiServiceUrl}/update-task/${taskId}`, {
+        status: newStatus,
+      });
       const serverTask = normalizeTask(response.data?.data, 0);
 
       setResult((previous) => {
@@ -563,7 +564,7 @@ export default function Page() {
 
     try {
       if (!editingTaskId.startsWith("local-")) {
-        await axios.patch(`${taskApiUrl}/tasks/${editingTaskId}`, {
+        await axios.patch(`${aiServiceUrl}/update-task/${editingTaskId}`, {
           task_id: updatedTask.task_id,
           title: updatedTask.title,
           description: updatedTask.description,
