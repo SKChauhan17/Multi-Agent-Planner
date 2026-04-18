@@ -74,6 +74,11 @@ Copy-Item .env.example .env
 |---|---|---|
 | `PORT` | No | API port, default `4000` |
 | `DB_PATH` | No | SQLite file path, default `./data/planner.db` |
+| `ALLOWED_ORIGINS` | No | Comma-separated browser CORS allowlist |
+| `INTERNAL_API_TOKEN` | Yes (prod) | Shared token expected in `x-internal-api-token` |
+| `JSON_BODY_LIMIT` | No | Request body size limit |
+| `RATE_LIMIT_WINDOW_MS` | No | In-memory rate-limit window in ms |
+| `RATE_LIMIT_MAX_REQUESTS` | No | Max requests per IP inside each window |
 
 ## Quick Start
 
@@ -98,6 +103,7 @@ Create a plan:
 ```bash
 curl -X POST http://localhost:4000/api/plans \
   -H "Content-Type: application/json" \
+  -H "x-internal-api-token: <internal_token>" \
   -d '{"goal":"Goal: Ship MVP","tasks":[{"task_id":"T1","title":"Scope MVP"}]}'
 ```
 
@@ -106,6 +112,7 @@ Update a task:
 ```bash
 curl -X PATCH http://localhost:4000/api/tasks/<task_id> \
   -H "Content-Type: application/json" \
+  -H "x-internal-api-token: <internal_token>" \
   -d '{"status":"done"}'
 ```
 

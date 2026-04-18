@@ -47,11 +47,12 @@ This documentation suite follows the language and visual direction in `DESIGN.md
 │ Next.js 16 + React 19        │      POST /re-review-plan      │ FastAPI                      │
 │ http://localhost:3000        │ ──────────────────────────────> │ http://localhost:8000        │
 │                              │      POST /daily-standup       │                              │
+│                              │      PATCH /update-task/:id    │                              │
 └───────────────┬──────────────┘ ──────────────────────────────> └──────────────┬──────────────┘
                                 │                     reviewed plan + standup                   │
                                 │ <───────────────────────────────────────────────────────────── │
                                 │                                                               │ POST /api/plans
-                                │ PATCH /api/tasks/:id                                          │
+                                │                                                               │ PATCH /api/tasks/:id
                                 ▼                                                               ▼
 ┌──────────────────────────────┐      read/write plans + tasks   ┌──────────────────────────────┐
 │ Task API                     │ ───────────────────────────────> │ SQLite planner.db            │
@@ -96,6 +97,7 @@ Copy-Item frontend/.env.example frontend/.env.local
 ```
 
 Add provider keys in `ai-service/.env`.
+Set the same shared value for `TASK_API_INTERNAL_TOKEN` in `ai-service/.env` and `INTERNAL_API_TOKEN` in `task-api/.env`.
 
 ### 2) Install dependencies
 
@@ -147,9 +149,10 @@ python -m compileall ai-service
 | AI Service | `POST /generate-plan` | Build and review the initial task roadmap |
 | AI Service | `POST /re-review-plan` | Critique manually edited tasks |
 | AI Service | `POST /daily-standup` | Summarize done, in-progress, and blocked work |
+| AI Service | `PATCH /update-task/:id` | Securely proxy mutable task updates to Task API |
 | Task API | `POST /api/plans` | Persist plan and task graph |
 | Task API | `GET /api/plans/:id` | Fetch one plan with tasks |
-| Task API | `PATCH /api/tasks/:id` | Update mutable task fields |
+| Task API | `PATCH /api/tasks/:id` | Update mutable task fields (internal caller) |
 | Task API | `DELETE /api/plans/:id` | Delete one plan and related tasks |
 
 ## Service Guides

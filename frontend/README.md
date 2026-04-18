@@ -40,7 +40,7 @@ The Frontend is the planning studio experience: a warm, editorial dashboard for 
 │ deadline + priority controls │      POST /re-review-plan     │ planner/reviewer endpoints    │
 └───────────────┬──────────────┘ ─────────────────────────────> └──────────────────────────────┘
                                 │
-                                │ PATCH /api/tasks/:id
+                                │ PATCH /update-task/:id
                                 ▼
 ┌──────────────────────────────┐
 │ Editable Task Cards          │
@@ -59,7 +59,7 @@ The Frontend is the planning studio experience: a warm, editorial dashboard for 
 
 - Goal brief with optional deadline and priority controls.
 - Progressive generation phases: planning, reviewing, finalizing.
-- Inline task editing with Task API persistence.
+- Inline task editing with AI Service proxy persistence.
 - Reviewer rerun for edited task graphs.
 - Daily standup summary for done, active, and blocked items.
 - In-session plan history snapshots.
@@ -86,7 +86,6 @@ Copy-Item .env.example .env.local
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_AI_SERVICE_URL` | Yes | Base URL for AI Service |
-| `NEXT_PUBLIC_TASK_API_URL` | Yes | Base URL for Task API including `/api` |
 
 ## Quick Start
 
@@ -118,4 +117,4 @@ npm run start --prefix frontend
 - `POST /generate-plan`
 - `POST /re-review-plan`
 - `POST /daily-standup`
-- `PATCH /api/tasks/:id`
+- `PATCH /update-task/:id`

@@ -56,6 +56,7 @@ The AI Service is the orchestration engine of the platform: it plans, critiques,
 | `POST` | `/generate-plan` | Generate and review an initial plan |
 | `POST` | `/re-review-plan` | Re-review manually edited tasks |
 | `POST` | `/daily-standup` | Summarize done, in-progress, and blocked work |
+| `PATCH` | `/update-task/:id` | Proxy mutable task updates to Task API |
 
 ## Environment Variables
 
@@ -71,6 +72,12 @@ Copy-Item .env.example .env
 | `OPENROUTER_API_KEY` | Yes | Fallback provider key |
 | `OPENROUTER_SITE_URL` | No | OpenRouter referer metadata |
 | `OPENROUTER_APP_NAME` | No | OpenRouter app-name metadata |
+| `ALLOWED_ORIGINS` | No | Comma-separated CORS allowlist for browser callers |
+| `TASK_API_BASE_URL` | No | Base URL for Task API, default `http://localhost:4000` |
+| `TASK_API_INTERNAL_TOKEN` | Yes (prod) | Shared token forwarded to Task API |
+| `TASK_API_TIMEOUT_SECONDS` | No | Task API request timeout in seconds |
+| `RATE_LIMIT_WINDOW_SECONDS` | No | Rate-limit window for in-memory limiter |
+| `RATE_LIMIT_MAX_REQUESTS` | No | Max requests per IP+endpoint per window |
 
 ## Quick Start
 
