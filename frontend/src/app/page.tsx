@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { usePlannerStore } from "../store/usePlannerStore";
 import { AnimatePresence, motion, Variants } from "framer-motion";
 import {
   AlertCircle,
@@ -294,23 +295,34 @@ function parseGoalEnvelope(goalEnvelope: string): {
 }
 
 export default function Page() {
-  const [goal, setGoal] = useState("");
-  const [deadline, setDeadline] = useState("");
-  const [userPriority, setUserPriority] = useState<TaskPriority>("Medium");
+  const {
+    goal,
+    setGoal,
+    deadline,
+    setDeadline,
+    userPriority,
+    setUserPriority,
+    result,
+    setResult,
+    dailyStandup,
+    setDailyStandup,
+    agentTrace,
+    setAgentTrace,
+    planHistory,
+    setPlanHistory,
+    resetStore
+  } = usePlannerStore();
+
+  const [isMounted, setIsMounted] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState<LoadingPhase>("none");
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PlanResponse | null>(null);
   const [today, setToday] = useState("");
 
   const [isRerunningReview, setIsRerunningReview] = useState(false);
   const [isGeneratingStandup, setIsGeneratingStandup] = useState(false);
-  const [dailyStandup, setDailyStandup] = useState<DailyStandupResponse | null>(null);
 
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
-
-  const [agentTrace, setAgentTrace] = useState<AgentTraceEntry[]>([]);
-  const [planHistory, setPlanHistory] = useState<PlanHistoryItem[]>([]);
 
   const aiServiceUrl =
     process.env.NEXT_PUBLIC_AI_SERVICE_URL?.trim() ||
@@ -323,6 +335,7 @@ export default function Page() {
       .toISOString()
       .split("T")[0];
     setToday(localDate);
+    setIsMounted(true);
   }, []);
 
   const tasks = useMemo(() => result?.final_plan?.tasks ?? [], [result]);
@@ -707,13 +720,9 @@ export default function Page() {
   };
 
   const handleReset = () => {
-    setGoal("");
-    setDeadline("");
-    setUserPriority("Medium");
+    resetStore();
     setError(null);
-    setResult(null);
     setLoadingPhase("none");
-    setDailyStandup(null);
     setEditingTaskId(null);
     setTaskDraft(null);
     appendTrace("Reset", "Cleared active plan from workspace view.", "done");
@@ -728,6 +737,8 @@ export default function Page() {
     if (state === "error") return "bg-[#b53333]";
     return "bg-[#d97757]";
   };
+
+  if (!isMounted) return null;
 
   return (
     <div className="min-h-screen bg-[#f5f4ed] text-[#141413]">
