@@ -1185,6 +1185,7 @@ export default function Page() {
                               <input
                                 type="date"
                                 min={today}
+                                max={deadline || undefined}
                                 value={taskDraft.recommended_date}
                                 onChange={(event) =>
                                   handleTaskDraftChange("recommended_date", event.target.value)

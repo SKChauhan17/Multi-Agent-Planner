@@ -132,6 +132,7 @@ Rules:
 - Generate recommended_date in YYYY-MM-DD format.
 - recommended_date is required for every task and cannot be empty.
 - Do NOT generate recommended dates that are in the past. Today's date is {current_date}. If the deadline is in the past, or if the user doesn't provide a deadline, you MUST still generate dates for today or in the future.
+- Do NOT generate recommended dates that are after the deadline if one is provided in the goal.
 
 Return ONLY valid JSON with this shape:
 {{
