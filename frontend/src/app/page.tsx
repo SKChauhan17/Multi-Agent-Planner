@@ -1184,6 +1184,7 @@ export default function Page() {
                               <span className="label-caps text-[#87867f]">Recommended Date</span>
                               <input
                                 type="date"
+                                min={today}
                                 value={taskDraft.recommended_date}
                                 onChange={(event) =>
                                   handleTaskDraftChange("recommended_date", event.target.value)

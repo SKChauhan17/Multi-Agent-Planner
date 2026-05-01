@@ -233,8 +233,10 @@ def _ensure_recommended_dates(tasks: list[dict], goal: str) -> list[dict]:
     for index, task in enumerate(tasks):
         normalized_existing = _normalize_iso_date(str(task.get("recommended_date", "")))
         if normalized_existing:
-            task["recommended_date"] = normalized_existing
-            continue
+            task_date = date.fromisoformat(normalized_existing[:10])
+            if task_date >= today:
+                task["recommended_date"] = normalized_existing
+                continue
 
         if deadline is None:
             target_date = today + timedelta(days=step_days * (index + 1))

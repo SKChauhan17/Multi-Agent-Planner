@@ -117,6 +117,9 @@ def _call_openrouter(model_name: str, prompt: str) -> str:
 def review_plan(goal: str, planner_json_output: str) -> dict:
     """Takes planner output and critiques it, returning a verified dictionary."""
 
+    from datetime import datetime
+    current_date = datetime.now().strftime("%Y-%m-%d")
+
     prompt = f"""
 You are an expert project reviewer.
 
@@ -128,6 +131,7 @@ Rules:
 - Use dependencies for prerequisites, or [] when none exist.
 - Generate recommended_date in YYYY-MM-DD format.
 - recommended_date is required for every task and cannot be empty.
+- Do NOT generate recommended dates that are in the past. Today's date is {current_date}. If the deadline is in the past, or if the user doesn't provide a deadline, you MUST still generate dates for today or in the future.
 
 Return ONLY valid JSON with this shape:
 {{
@@ -140,7 +144,7 @@ Return ONLY valid JSON with this shape:
       "estimated_hours": 1,
       "priority": "High",
       "dependencies": [],
-      "recommended_date": "2026-04-20"
+      "recommended_date": "{current_date}"
     }}
   ]
 }}

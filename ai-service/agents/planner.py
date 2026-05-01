@@ -121,6 +121,9 @@ def _call_openrouter(model_name: str, prompt: str) -> str:
 
 def generate_plan(goal: str) -> str:
     """Takes a goal and returns a strictly structured JSON string of tasks."""
+    
+    from datetime import datetime
+    current_date = datetime.now().strftime("%Y-%m-%d")
 
     prompt = f"""
 You are an expert project planner. Break down the following goal into 5 to 10 actionable sub-tasks.
@@ -132,6 +135,7 @@ Rules:
 - Generate recommended_date in YYYY-MM-DD format for each task.
 - recommended_date is required for every task and cannot be empty.
 - Respect any deadline context from the goal text.
+- Do NOT generate recommended dates that are in the past. Today's date is {current_date}. If the deadline is in the past, or if the user doesn't provide a deadline, you MUST still generate dates for today or in the future.
 
 Return ONLY valid JSON with this exact shape:
 {{
@@ -143,7 +147,7 @@ Return ONLY valid JSON with this exact shape:
       "estimated_hours": 1,
       "priority": "High",
       "dependencies": [],
-      "recommended_date": "2026-04-20"
+      "recommended_date": "{current_date}"
     }}
   ]
 }}
