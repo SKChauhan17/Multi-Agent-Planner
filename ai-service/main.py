@@ -191,7 +191,7 @@ def _extract_task_candidates(reviewed_dict: object) -> list[object]:
 
 def _parse_deadline_from_goal(goal: str) -> date | None:
     marker = "Deadline:"
-    idx = goal.find(marker)
+    idx = goal.rfind(marker)
     if idx == -1:
         return None
 
